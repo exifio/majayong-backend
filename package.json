@@ -18,8 +18,8 @@
     "db:seed:staging": "node scripts/seed-staging.mjs",
     "db:verify:b": "node scripts/verify-b-pg.mjs",
     "test:a": "jest --runInBand",
-    "test:b": "DATABASE_URL=\"${DATABASE_URL:-}\" node --import ./tests/b/resolve-ts.mjs --test $(find src openapi -name 'b-*.test.ts')",
-    "test:c": "DATABASE_URL=\"${DATABASE_URL:-}\" node --test $(find src -name 'c??-*.test.ts')",
+    "test:b": "DATABASE_URL=\"${DATABASE_URL:-}\" node --import ./tests/b/resolve-ts.mjs --test $(find src openapi -name '*.b.test.ts')",
+    "test:c": "DATABASE_URL=\"${DATABASE_URL:-}\" node --test $(find src -name '*.c.test.ts')",
     "test:integration": "DATABASE_URL=\"${DATABASE_URL:-}\" node --import ./tests/b/resolve-ts.mjs --test $(find src -name '*.int.test.ts')",
     "test:typecheck": "tsc -p tsconfig.test.json",
     "check:rules": "node scripts/check-rules.mjs"
