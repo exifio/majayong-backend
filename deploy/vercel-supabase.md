@@ -2,7 +2,7 @@
 
 - 백엔드 저장소: `https://github.com/exifio/majayong-backend`
 - 배포 브랜치: `main`
-- 이 문서는 Vercel/Supabase 기준이다. 기존 `railway.json`과 `deploy/staging.md`는 Railway 시절 기록이며 이 배포에서 사용하지 않는다.
+- 이 문서는 Vercel/Supabase 기준이다. `deploy/staging.md`는 Railway 시절 기록이며 이 배포에서 사용하지 않는다.
 
 ## 1. 구성
 
