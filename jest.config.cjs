@@ -1,6 +1,6 @@
 module.exports = {
   testEnvironment: "node",
-  testMatch: ["<rootDir>/tests/a/**/*.test.ts"],
+  testMatch: ["<rootDir>/src/**/*.jest.test.ts"],
   moduleNameMapper: { "^(\\.{1,2}/.*)\\.js$": "$1" },
   transform: {
     "^.+\\.ts$": [

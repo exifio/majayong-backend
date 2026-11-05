@@ -80,6 +80,7 @@ async function requestJson(baseUrl: string, method: string, path: string, token:
 }
 
 afterAll(async () => {
+  // 정리: 생성한 프로젝트·초안·사용자 삭제와 서버 종료
   await db.project.deleteMany({ where: { id: { in: projectIds } } }).catch(() => undefined);
   await db.draft.deleteMany({ where: { id: { in: draftIds } } }).catch(() => undefined);
   await db.user.deleteMany({ where: { id: { in: userIds } } }).catch(() => undefined);
@@ -87,21 +88,28 @@ afterAll(async () => {
   await db.$disconnect();
 });
 
-describe("E2E-01 draft to spec", () => {
-  it("creates a default draft and publishes a project", async () => {
+describe("E2E-01 초안에서 명세까지", () => {
+  it("기본 초안을 만들고 프로젝트를 게시한다", async () => {
+    // 준비: 의뢰인 계정·토큰과 앱 서버 기동
     const clientId = await makeClient();
     const token = issueAccessToken({ userId: clientId, role: Role.CLIENT, expiresAt: Date.now() + 60_000 }, tokenSecret);
     const { baseUrl } = await startApp();
 
+    // 실행: 기본 초안 생성
     const createResponse = await requestJson(baseUrl, "POST", "/api/v1/drafts", token, { entryType: "DEFAULT_DRAFT" });
+    // 확인
     expect(createResponse.status).toBe(201);
     const draftId = createResponse.body.data.id;
     draftIds.push(draftId);
 
+    // 실행: 초안 가격 리포트 조회
     const priceReport = await requestJson(baseUrl, "GET", `/api/v1/drafts/${draftId}/price-report`, token);
+    // 확인
     expect(priceReport.status).toBe(200);
 
+    // 실행: 초안 발행
     const publish = await requestJson(baseUrl, "POST", `/api/v1/drafts/${draftId}/publish`, token, { disclosureConsentVersion: "v1" });
+    // 확인
     expect(publish.status).toBe(201);
     projectIds.push(publish.body.data.id);
   });
