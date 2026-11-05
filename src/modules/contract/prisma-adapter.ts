@@ -212,9 +212,28 @@ export interface ContractDbClient extends NotificationDbClient {
   };
 }
 
-export interface ContractPrismaClient extends ContractDbClient {
-  $transaction<T>(work: (tx: ContractDbClient) => Promise<T>): Promise<T>;
+/** Prisma interactive transaction 옵션(ms). */
+export interface ContractTransactionOptions {
+  readonly maxWait?: number;
+  readonly timeout?: number;
 }
+
+export interface ContractPrismaClient extends ContractDbClient {
+  $transaction<T>(
+    work: (tx: ContractDbClient) => Promise<T>,
+    options?: ContractTransactionOptions,
+  ): Promise<T>;
+}
+
+/**
+ * 합의 확정 트랜잭션 예산.
+ *
+ * 근거(2026-11-05 스테이징 실측): 해당 트랜잭션의 SQL 실행은 pg_stat_statements 기준
+ * 최대 7ms였으나, 함수 리전(iad1)과 Supabase(ap-northeast-2)가 달라 왕복 지연이
+ * 누적되고 기본값(maxWait 2s/timeout 5s)에서 간헐 P2028 → HTTP 500이 발생했다.
+ * 확인된 이 트랜잭션에만 명시하고, 다른 경로의 트랜잭션은 건드리지 않는다.
+ */
+const CONTRACT_TX_OPTIONS = { maxWait: 10_000, timeout: 15_000 } as const;
 
 /** C 소유 예치 테이블을 B가 직접 읽지 않도록 주입한다. */
 export interface DepositAttemptPort {
@@ -420,7 +439,30 @@ export function createPrismaContractUnitOfWork(
 ): ContractUnitOfWork {
   return {
     run<T>(work: (tx: ContractTx) => Promise<T>): Promise<T> {
-      return prisma.$transaction((tx) => work(createContractTx(tx, deposits)));
+      const startedAt = Date.now();
+      return prisma
+        .$transaction((tx) => work(createContractTx(tx, deposits)), CONTRACT_TX_OPTIONS)
+        .then((result) => {
+          // 트랜잭션 예산(maxWait/timeout) 대비 실제 소요를 확인하기 위한 1줄 메트릭.
+          console.info("contract transaction committed", {
+            durationMs: Date.now() - startedAt,
+          });
+          return result;
+        })
+        .catch((error: unknown) => {
+          // 원인 식별용 최소 메타데이터만 남긴다(PII·쿼리 값 없음).
+          const name = error instanceof Error ? error.name : typeof error;
+          const code =
+            typeof error === "object" && error !== null && "code" in error
+              ? String((error as { code: unknown }).code)
+              : "UNKNOWN";
+          console.error("contract transaction failed", {
+            durationMs: Date.now() - startedAt,
+            name,
+            code,
+          });
+          throw error;
+        });
     },
   };
 }

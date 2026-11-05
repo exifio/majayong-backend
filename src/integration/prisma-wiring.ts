@@ -131,8 +131,10 @@ export function createPrismaPorts(prisma: PrismaClient): BPrismaPorts {
     chat: base.chat,
     contract: {
       ...base.contract,
-      $transaction: (work: (tx: unknown) => Promise<unknown>) =>
-        prisma.$transaction((tx) => work(delegates(tx).contract)),
+      $transaction: (
+        work: (tx: unknown) => Promise<unknown>,
+        options?: { maxWait?: number; timeout?: number },
+      ) => prisma.$transaction((tx) => work(delegates(tx).contract), options),
     },
     report: withTransaction(base.report),
     support: withTransaction(base.support),
