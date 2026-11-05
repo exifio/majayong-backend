@@ -1,0 +1,10 @@
+# 로컬 전용/비밀값은 배포 산출물에 포함하지 않는다.
+.env
+.env.*
+!.env.example
+!.env.staging.example
+docs
+tests
+scripts
+*.md
+*.log
