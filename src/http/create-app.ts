@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import express, { type Express, type Router } from 'express';
 
 import { requireActor, type AuthVerifier } from './auth.js';
+import { corsMiddleware } from './cors.js';
 import { HttpError, errorHandler } from './envelope.js';
 
 export const API_BASE_PATH = '/api/v1';
@@ -27,6 +28,7 @@ export interface AppOptions {
 export function createApp(options: AppOptions): Express {
   const app = express();
   app.disable('x-powered-by');
+  app.use(corsMiddleware);
   app.use(express.json({ limit: options.bodyLimit ?? '1mb' }));
 
   app.use((request, response, next) => {

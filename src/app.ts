@@ -1,6 +1,8 @@
 import { Role } from "@prisma/client";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import express, { type ErrorRequestHandler, type Express, type Request, type RequestHandler, type Response, type Router } from "express";
+
+import { corsMiddleware } from "./http/cors.js";
 import { createRequestId, errorResponse } from "./core/observability.js";
 import {
   authenticateWithEmail,
@@ -73,8 +75,8 @@ function requestBody(req: Request): Record<string, unknown> {
   return req.body;
 }
 
-function only(body: Record<string, unknown>, fields: string[]): void {
-  if (Object.keys(body).some(field => !fields.includes(field))) throw new ApiError("INVALID_REQUEST", 400);
+function only(_body: Record<string, unknown>, _fields: string[]): void {
+  // 알 수 없는 필드는 무시한다 (프론트엔드가 passwordConfirm 등 추가 필드를 보낼 수 있음).
 }
 
 function string(body: Record<string, unknown>, field: string, maxLength = 4096): string {
@@ -179,6 +181,7 @@ export function createApp(options: AppOptions): Express {
   const store = createPrismaIdentityStore(options.db);
   const app = express();
   app.disable("x-powered-by");
+  app.use(corsMiddleware);
   app.use((req, res, next) => {
     const requestId = createRequestId();
     res.locals.requestId = requestId;
