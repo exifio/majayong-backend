@@ -123,8 +123,44 @@ describe('B-07 Prisma 신고 어댑터', () => {
     assert.deepEqual(message?.participantIds, ['client-1', 'supplier-1']);
   });
 
-  it('경고 횟수는 WARNING 조치만 센다', async () => {
+  it('관리자 신고 목록은 신고자·대상 표시명과 메시지 문맥을 함께 돌려준다', async () => {
     // 준비
+    const { db } = reportDb([
+      reportRow({
+        reporter: {
+          id: 'supplier-1',
+          role: 'SUPPLIER',
+          name: null,
+          clientProfile: null,
+          supplierProfile: { displayName: '강태오' },
+        },
+        targetUser: {
+          id: 'client-1',
+          role: 'CLIENT',
+          name: '문지아',
+          clientProfile: { businessName: null },
+          supplierProfile: null,
+        },
+        message: {
+          body: '카톡으로 연락 주세요',
+          createdAt: FIXED_NOW,
+          application: { project: { id: 'project-1', title: '예약 사이트' } },
+        },
+      }),
+    ]);
+    const tx = createReportTx(db, { applyAccountAction: unused }, () => FIXED_NOW);
+
+    // 실행
+    const rows = await tx.listReports({});
+
+    // 확인
+    assert.deepEqual(rows[0]?.reporter, { id: 'supplier-1', role: 'SUPPLIER', displayName: '강태오' });
+    assert.equal(rows[0]?.target.displayName, '문지아');
+    assert.equal(rows[0]?.message.body, '카톡으로 연락 주세요');
+    assert.equal(rows[0]?.message.projectTitle, '예약 사이트');
+  });
+
+  it('경고 횟수는 WARNING 조치만 센다', async () => {    // 준비
     const { db } = reportDb([
       reportRow({ id: 'r1', status: 'RESOLVED', action: 'WARNING' }),
       reportRow({ id: 'r2', status: 'RESOLVED', action: 'SUSPEND' }),

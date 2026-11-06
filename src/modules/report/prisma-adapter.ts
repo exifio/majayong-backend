@@ -11,6 +11,7 @@ import {
 import type {
   MyReportQueryPort,
   ReportActor,
+  ReportAdminRecord,
   ReportReason,
   ReportRecord,
   ReportStatus,
@@ -31,9 +32,29 @@ export interface ReportRow {
   readonly resolvedById: string | null;
   readonly resolvedAt: Date | null;
   readonly createdAt: Date;
+  /** 관리자 목록 조회에서만 join으로 채운다. */
+  readonly reporter?: ReportUserRow;
+  readonly targetUser?: ReportUserRow;
+  readonly message?: ReportContextMessageRow;
 }
 
-export interface ReportMessageRow {
+export interface ReportUserRow {
+  readonly id: string;
+  readonly role: 'CLIENT' | 'SUPPLIER' | 'ADMIN';
+  readonly name: string | null;
+  readonly clientProfile: { readonly businessName: string | null } | null;
+  readonly supplierProfile: { readonly displayName: string } | null;
+}
+
+export interface ReportContextMessageRow {
+  readonly body: string;
+  readonly createdAt: Date;
+  readonly application: {
+    readonly project: { readonly id: string; readonly title: string };
+  };
+}
+
+export interface ReportableMessageRow {
   readonly id: string;
   readonly senderId: string | null;
   readonly application: {
@@ -56,7 +77,7 @@ export interface ReportDbClient {
           };
         };
       };
-    }): Promise<ReportMessageRow | null>;
+    }): Promise<ReportableMessageRow | null>;
   };
   readonly report: {
     findFirst(input: {
@@ -65,6 +86,7 @@ export interface ReportDbClient {
     findMany(input: {
       readonly where: Readonly<Record<string, unknown>>;
       readonly orderBy?: readonly Readonly<Record<string, 'asc' | 'desc'>>[];
+      readonly include?: unknown;
     }): Promise<readonly ReportRow[]>;
     findUnique(input: {
       readonly where: { readonly id: string };
@@ -114,6 +136,52 @@ function toRecord(row: ReportRow): ReportRecord {
     createdAt: row.createdAt,
   };
 }
+
+function displayNameOf(user: ReportUserRow): string | null {
+  if (user.role === 'CLIENT') return user.clientProfile?.businessName ?? user.name;
+  if (user.role === 'SUPPLIER') return user.supplierProfile?.displayName ?? user.name;
+  return user.name;
+}
+
+function toAdminRecord(row: ReportRow): ReportAdminRecord {
+  const { reporter, targetUser, message } = row;
+  if (reporter === undefined || targetUser === undefined || message === undefined) {
+    throw new Error('Report admin list row is missing joined reporter, target or message context');
+  }
+  return {
+    ...toRecord(row),
+    reporter: { id: reporter.id, role: reporter.role, displayName: displayNameOf(reporter) },
+    target: { id: targetUser.id, role: targetUser.role, displayName: displayNameOf(targetUser) },
+    message: {
+      body: message.body,
+      createdAt: message.createdAt,
+      projectId: message.application.project.id,
+      projectTitle: message.application.project.title,
+    },
+  };
+}
+
+const REPORT_USER_INCLUDE = {
+  select: {
+    id: true,
+    role: true,
+    name: true,
+    clientProfile: { select: { businessName: true } },
+    supplierProfile: { select: { displayName: true } },
+  },
+} as const;
+
+const REPORT_ADMIN_INCLUDE = {
+  reporter: REPORT_USER_INCLUDE,
+  targetUser: REPORT_USER_INCLUDE,
+  message: {
+    select: {
+      body: true,
+      createdAt: true,
+      application: { select: { project: { select: { id: true, title: true } } } },
+    },
+  },
+} as const;
 
 export function createReportTx(
   db: ReportDbClient,
@@ -167,8 +235,9 @@ export function createReportTx(
       const rows = await db.report.findMany({
         where: input.status === undefined ? {} : { status: input.status },
         orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+        include: REPORT_ADMIN_INCLUDE,
       });
-      return rows.map(toRecord);
+      return rows.map(toAdminRecord);
     },
 
     async findReport(reportId) {

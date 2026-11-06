@@ -21,6 +21,27 @@ export interface ReportRecord {
   readonly createdAt: Date;
 }
 
+/** 관리자 목록에서 신고자·대상·메시지 문맥을 함께 보여 주기 위한 값. */
+export interface ReportParty {
+  readonly id: string;
+  readonly role: 'CLIENT' | 'SUPPLIER' | 'ADMIN';
+  readonly displayName: string | null;
+}
+
+export interface ReportMessageContext {
+  readonly body: string;
+  readonly createdAt: Date;
+  readonly projectId: string;
+  readonly projectTitle: string;
+}
+
+/** `GET /admin/reports` 전용. 일반 신고 기록에 운영자 판단에 필요한 문맥을 더한다. */
+export interface ReportAdminRecord extends ReportRecord {
+  readonly reporter: ReportParty;
+  readonly target: ReportParty;
+  readonly message: ReportMessageContext;
+}
+
 export interface ReportTx {
   findReportableMessage(messageId: string): Promise<{
     readonly id: string;
@@ -36,7 +57,7 @@ export interface ReportTx {
     readonly detail: string | null;
     readonly createdAt: Date;
   }): Promise<ReportRecord>;
-  listReports(input: { readonly status?: ReportStatus }): Promise<readonly ReportRecord[]>;
+  listReports(input: { readonly status?: ReportStatus }): Promise<readonly ReportAdminRecord[]>;
   findReport(reportId: string): Promise<ReportRecord | null>;
   findWarningCount(targetUserId: string): Promise<number>;
   resolveReport(input: {
@@ -136,7 +157,7 @@ export function submitReport(uow: ReportUnitOfWork, input: SubmitReportInput): P
 export function listReports(
   _uow: ReportUnitOfWork,
   _input: { readonly actor: ReportActor; readonly status?: ReportStatus },
-): Promise<readonly ReportRecord[]> {
+): Promise<readonly ReportAdminRecord[]> {
   if (_input.actor.role !== 'ADMIN') {
     return Promise.reject(new ReportError(403, 'ADMIN_ONLY', '운영자만 신고 목록을 볼 수 있습니다.'));
   }

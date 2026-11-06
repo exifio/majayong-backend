@@ -10,6 +10,7 @@ import {
   resolveReport,
   submitReport,
   type ReportAction,
+  type ReportAdminRecord,
   type ReportRecord,
   type ReportTx,
   type ReportUnitOfWork,
@@ -87,8 +88,20 @@ class FakeReportTx implements ReportTx {
     this.reports.push(created);
     return created;
   }
-  async listReports(input: { status?: ReportRecord['status'] }): Promise<readonly ReportRecord[]> {
-    return this.reports.filter((report) => input.status === undefined || report.status === input.status);
+  async listReports(input: { status?: ReportRecord['status'] }): Promise<readonly ReportAdminRecord[]> {
+    return this.reports
+      .filter((report) => input.status === undefined || report.status === input.status)
+      .map((report) => ({
+        ...report,
+        reporter: { id: report.reporterId, role: 'CLIENT' as const, displayName: null },
+        target: { id: report.targetUserId, role: 'SUPPLIER' as const, displayName: null },
+        message: {
+          body: '메시지',
+          createdAt: report.createdAt,
+          projectId: 'project-1',
+          projectTitle: '프로젝트',
+        },
+      }));
   }
   async findReport(reportId: string): Promise<ReportRecord | null> {
     return this.reports.find((report) => report.id === reportId) ?? null;
