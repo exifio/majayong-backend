@@ -217,8 +217,8 @@ describe("A-05 프로젝트 게시", () => {
     expect(await db.project.count({ where: { draftId } })).toBe(0);
   });
 
-  it("A-05-T06 공개 동의와 의뢰인 사업자명을 요구한다", async () => {
-    // 준비: 동의를 거부한 경우, 동의 필드가 빠진 경우, 사업자명이 없는 경우의 초안과 서버
+  it("A-05-T06 공개 동의는 요구하지만 상호 입력은 요구하지 않는다", async () => {
+    // 준비: 동의를 거부한 경우, 동의 필드가 빠진 경우, 상호가 없는 경우의 초안과 서버
     const withoutConsent = await makeDraft();
     const baseUrl = await startServer({ userId: withoutConsent.clientId, role: Role.CLIENT });
     // 실행 및 확인: 공개 동의를 거부한 게시 요청
@@ -248,9 +248,13 @@ describe("A-05 프로젝트 게시", () => {
     const withoutProfile = await makeDraft();
     await db.clientProfile.delete({ where: { userId: withoutProfile.clientId } });
     const noProfileUrl = await startServer({ userId: withoutProfile.clientId, role: Role.CLIENT });
-    // 실행 및 확인: 사업자명이 없는 게시 요청
-    expect((await publish(noProfileUrl, withoutProfile.draftId)).status).toBe(422);
-    expect(await db.project.count({ where: { draftId: withoutProfile.draftId } })).toBe(0);
+    // 실행 및 확인: 상호가 없어도 동의한 초안은 게시된다
+    const response = await publish(noProfileUrl, withoutProfile.draftId);
+    expect(response.status).toBe(201);
+    const project = await db.project.findUniqueOrThrow({ where: { draftId: withoutProfile.draftId } });
+    expect(await db.draft.findUniqueOrThrow({ where: { id: withoutProfile.draftId }, select: { status: true } })).toEqual({ status: "CONFIRMED" });
+    expect(await db.specItem.count({ where: { projectId: project.id } })).toBe(1);
+    expect(await db.eventLog.count({ where: { projectId: project.id, type: "PROJECT_PUBLISHED" } })).toBe(1);
   });
 
   it("연결된 초안을 식별하지 못하는 동의 버전을 거부한다", async () => {

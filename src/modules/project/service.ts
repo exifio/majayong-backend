@@ -118,7 +118,6 @@ export async function publishDraft(
     if (await tx.project.findUnique({ where: { draftId }, select: { id: true } })) {
       throw new DraftError("DRAFT_ALREADY_CONFIRMED", 409);
     }
-    if (!draft.client.clientProfile?.businessName?.trim()) throw new DraftError("CLIENT_PROFILE_INCOMPLETE", 422);
     if (Array.isArray(draft.pendingFeatures) && draft.pendingFeatures.length > 0) {
       throw new DraftError("DRAFT_FEATURES_PENDING", 409);
     }
@@ -353,14 +352,8 @@ export async function getPublicProjectDetail(
       include: { user: { select: { name: true, bio: true } } },
     }),
   ]);
-  if (!clientProfile?.profileCompleted || !clientProfile.businessName) throw new DraftError("CLIENT_PROFILE_NOT_FOUND", 404);
-
-  await ports.view.recordFirstView({ projectId, supplierId, at: now });
-
-  return publicProjectDetail(project, {
-    summary: project.summary,
-    items: items.map(item => ({ specItemId: item.id, title: item.title, description: item.description, conditions: item.conditions, wireframe: item.wireframe })),
-    client: {
+  const client = clientProfile?.profileCompleted && clientProfile.businessName?.trim()
+    ? {
       name: clientProfile.user.name,
       businessName: clientProfile.businessName,
       industryField: clientProfile.industryField,
@@ -369,7 +362,24 @@ export async function getPublicProjectDetail(
       websiteUrl: clientProfile.websiteUrl,
       ratingAvg: clientProfile.ratingAvg,
       reviewCount: clientProfile.reviewCount,
-    },
+    }
+    : {
+      name: null,
+      businessName: null,
+      industryField: null,
+      storeAddress: null,
+      bio: null,
+      websiteUrl: null,
+      ratingAvg: null,
+      reviewCount: 0,
+    };
+
+  await ports.view.recordFirstView({ projectId, supplierId, at: now });
+
+  return publicProjectDetail(project, {
+    summary: project.summary,
+    items: items.map(item => ({ specItemId: item.id, title: item.title, description: item.description, conditions: item.conditions, wireframe: item.wireframe })),
+    client,
   });
 }
 

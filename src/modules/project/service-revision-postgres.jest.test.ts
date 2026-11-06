@@ -301,6 +301,32 @@ describe("A-06 조회 표면", () => {
     for (const forbidden of ["unitPrice", "estimatedTotal", "clientFee", "email"]) expect(detail).not.toHaveProperty(forbidden);
   });
 
+  it("프로필 미완성 의뢰인의 상세는 프로필 정보를 숨기고 제공한다", async () => {
+    // 준비: 상호 프로필이 없는 프로젝트와 NDA 동의 공급자
+    const clientId = await makeClient();
+    await db.clientProfile.delete({ where: { userId: clientId } });
+    const projectId = await makeProject(clientId);
+    await addSpecItems(projectId, 1, 2);
+    const supplierId = await makeSupplier("nda-v1");
+    const recordFirstView = jest.fn(async () => undefined);
+
+    // 실행: 공급자가 공개 프로젝트 상세 조회
+    const detail = await getPublicProjectDetail(db, { supplierNdaVersion: "nda-v1", view: { recordFirstView } }, projectId, supplierId, now);
+
+    // 확인: 프로젝트는 열리고 미완성 프로필 정보는 비공개다
+    expect(recordFirstView).toHaveBeenCalledTimes(1);
+    expect(detail.client).toEqual({
+      name: null,
+      businessName: null,
+      industryField: null,
+      storeAddress: null,
+      bio: null,
+      websiteUrl: null,
+      ratingAvg: null,
+      reviewCount: 0,
+    });
+  });
+
   it("현재 공급자 NDA 없이는 공개 상세를 막는다", async () => {
     // 준비: NDA를 동의하지 않은 공급자
     const clientId = await makeClient();

@@ -32,7 +32,7 @@ export type PublicSpecItem = {
 
 export type PublicClientCard = {
   name: string | null;
-  businessName: string;
+  businessName: string | null;
   industryField: string | null;
   storeAddress: string | null;
   bio: string | null;
