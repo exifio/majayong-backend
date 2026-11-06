@@ -20,10 +20,14 @@ const ROUTE_FILES = [
   "src/modules/support/http.ts",
 ];
 
-// 원본 118 인벤토리 밖에서 승인된 추가(D-11 파일 다운로드, D-25 Toss 예치 승인).
+// 원본 118 인벤토리 밖에서 승인된 추가(D-11, D-25, D-29, D-30, D-32, D-36).
 const APPROVED_ADDITIONS = new Set([
   "GET /uploads/:param/download",
   "POST /contracts/:param/deposits/:param/confirm",
+  "POST /admin/installments/:param/release",
+  "POST /admin/jobs/run",
+  "GET /internal/jobs/run",
+  "POST /contracts/:param/cancellation/withdraw",
 ]);
 
 const normalize = (operation: string): string => {
