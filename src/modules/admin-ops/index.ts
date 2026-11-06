@@ -56,6 +56,58 @@ export interface AdminEscalatedInspection {
   decisionNotes?: { client: string; supplier: string };
 }
 
+export interface AdminInspectionCondition {
+  key: string;
+  text: string;
+  state: string;
+}
+
+export interface AdminInspectionClaim {
+  requestedBy: string | null;
+  what: string | null;
+  client: string;
+  supplier: string;
+  evidence: readonly { type: string; ref: string }[];
+}
+
+export interface AdminInspectionHistoryEntry {
+  id: string;
+  reason: string;
+  conditionKey: string | null;
+  note: string | null;
+  status: string;
+  deliveryAttemptNo: number;
+  createdAt: Date;
+  resolvedAt: Date | null;
+  decision: string | null;
+}
+
+export interface AdminDeliveryInfo {
+  id: string;
+  attemptNo: number;
+  summary: string | null;
+  items: unknown;
+  submittedAt: Date;
+}
+
+export interface AdminEscalatedInspectionDetail extends AdminEscalatedInspection {
+  contractId: string;
+  projectTitle: string;
+  itemTitle: string;
+  itemDescription: string;
+  clientName: string | null;
+  supplierName: string | null;
+  agreedAmount: number;
+  clientFee: number;
+  interimRatio: number;
+  conditions: readonly AdminInspectionCondition[];
+  escalation: AdminInspectionClaim | null;
+  history: readonly AdminInspectionHistoryEntry[];
+  delivery: AdminDeliveryInfo | null;
+  createdAt: Date;
+  resolvedAt: Date | null;
+}
+
 export interface AdminCancellationContract {
   id: string;
   status: string;
@@ -109,7 +161,7 @@ export interface AdminRepository {
   listHeldDeposits(): Promise<AdminHeldDeposit[]>;
   getHeldDeposit(id: string): Promise<AdminHeldDeposit | null>;
   updateHeldDeposit(id: string, patch: Partial<AdminHeldDeposit>): Promise<AdminHeldDeposit>;
-  listEscalatedInspections(): Promise<AdminEscalatedInspection[]>;
+  listEscalatedInspections(): Promise<AdminEscalatedInspectionDetail[]>;
   getInspection(id: string): Promise<AdminEscalatedInspection | null>;
   updateInspection(id: string, patch: Partial<AdminEscalatedInspection>): Promise<AdminEscalatedInspection>;
   listCancellationQueue(): Promise<AdminCancellationContract[]>;
@@ -125,7 +177,7 @@ export interface AdminRepository {
 export function createInMemoryAdminRepository(): AdminRepository {
   const blocks = new Map<string, AdminBlock>();
   const heldDeposits = new Map<string, AdminHeldDeposit>();
-  const inspections = new Map<string, AdminEscalatedInspection>();
+  const inspections = new Map<string, AdminEscalatedInspectionDetail>();
   const cancellationContracts = new Map<string, AdminCancellationContract>();
   const eventLogs: EventLogEntity[] = [];
   let logIdCounter = 1;
@@ -138,7 +190,24 @@ export function createInMemoryAdminRepository(): AdminRepository {
       heldDeposits.set(deposit.id, { ...deposit });
     },
     seedEscalatedInspection(inspection) {
-      inspections.set(inspection.id, { ...inspection });
+      inspections.set(inspection.id, {
+        ...inspection,
+        contractId: "",
+        projectTitle: "",
+        itemTitle: "",
+        itemDescription: "",
+        clientName: null,
+        supplierName: null,
+        agreedAmount: 0,
+        clientFee: 0,
+        interimRatio: 50,
+        conditions: [],
+        escalation: null,
+        history: [],
+        delivery: null,
+        createdAt: new Date(0),
+        resolvedAt: null,
+      });
     },
     seedCancellationQueueContract(contract) {
       cancellationContracts.set(contract.id, { ...contract });
@@ -400,7 +469,7 @@ export class AdminOpsService {
     return updated;
   }
 
-  async listEscalatedInspections(actor: { userId: string; role: string }): Promise<AdminEscalatedInspection[]> {
+  async listEscalatedInspections(actor: { userId: string; role: string }): Promise<AdminEscalatedInspectionDetail[]> {
     this.checkAdminRole(actor);
     return this.repo.listEscalatedInspections();
   }

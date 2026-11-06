@@ -23,7 +23,10 @@ import type {
   AdminBlockCondition,
   AdminCancellationContract,
   AdminEscalatedInspection,
+  AdminEscalatedInspectionDetail,
   AdminHeldDeposit,
+  AdminInspectionClaim,
+  AdminInspectionCondition,
   AdminRepository,
   EventLogEntity,
 } from "../modules/admin-ops/index.ts";
@@ -820,6 +823,47 @@ export function createPrismaRepositories(prisma: PrismaClient, options: PrismaSt
     };
   }
 
+  function parseInspectionConditions(value: Json): AdminInspectionCondition[] {
+    if (!Array.isArray(value)) return [];
+    const conditions: AdminInspectionCondition[] = [];
+    for (const item of value) {
+      if (typeof item !== "object" || item === null || Array.isArray(item)) continue;
+      const record = item as Record<string, unknown>;
+      if (typeof record.text !== "string") continue;
+      conditions.push({
+        key: typeof record.key === "string" ? record.key : "",
+        text: record.text,
+        state: typeof record.state === "string" ? record.state : "DECIDED",
+      });
+    }
+    return conditions;
+  }
+
+  function parseEscalation(value: Json): AdminInspectionClaim | null {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+    const record = value as Record<string, unknown>;
+    const claims =
+      typeof record.claims === "object" && record.claims !== null && !Array.isArray(record.claims)
+        ? (record.claims as Record<string, unknown>)
+        : {};
+    const evidence: { type: string; ref: string }[] = [];
+    if (Array.isArray(record.evidence)) {
+      for (const item of record.evidence) {
+        if (typeof item !== "object" || item === null || Array.isArray(item)) continue;
+        const entry = item as Record<string, unknown>;
+        if (typeof entry.type !== "string" || typeof entry.ref !== "string") continue;
+        evidence.push({ type: entry.type, ref: entry.ref });
+      }
+    }
+    return {
+      requestedBy: typeof record.requestedBy === "string" ? record.requestedBy : null,
+      what: typeof record.what === "string" ? record.what : null,
+      client: typeof claims.client === "string" ? claims.client : "",
+      supplier: typeof claims.supplier === "string" ? claims.supplier : "",
+      evidence,
+    };
+  }
+
   function mapAdminBlock(
     row: {
       id: string;
@@ -920,8 +964,69 @@ export function createPrismaRepositories(prisma: PrismaClient, options: PrismaSt
       return mapHeldDeposit(row);
     },
     async listEscalatedInspections() {
-      const rows = await prisma.inspectionRequest.findMany({ where: { status: "ESCALATED" } });
-      return rows.map(mapAdminInspection);
+      const rows = await prisma.inspectionRequest.findMany({
+        where: { status: "ESCALATED" },
+        include: {
+          delivery: true,
+          contractItem: {
+            include: {
+              inspections: { include: { delivery: true }, orderBy: { createdAt: "asc" } },
+              contract: {
+                include: {
+                  application: {
+                    include: {
+                      project: { include: { draft: { include: { client: { include: { clientProfile: true } } } } } },
+                      supplier: { include: { user: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        orderBy: { escalatedAt: "asc" },
+      });
+      return rows.map((row): AdminEscalatedInspectionDetail => {
+        const application = row.contractItem.contract.application;
+        const client = application.project.draft.client;
+        return {
+          ...mapAdminInspection(row),
+          contractId: row.contractItem.contractId,
+          projectTitle: application.project.title,
+          itemTitle: row.contractItem.title,
+          itemDescription: row.contractItem.description,
+          clientName: client.clientProfile?.businessName ?? client.name,
+          supplierName: application.supplier.displayName ?? application.supplier.user.name,
+          agreedAmount: row.contractItem.contract.agreedAmount,
+          clientFee: row.contractItem.contract.clientFee,
+          interimRatio: row.contractItem.contract.interimRatio,
+          conditions: parseInspectionConditions(row.contractItem.conditions),
+          escalation: parseEscalation(row.escalation),
+          history: row.contractItem.inspections.map((inspection) => ({
+            id: inspection.id,
+            reason: inspection.reason,
+            conditionKey: inspection.conditionKey,
+            note: inspection.note,
+            status: inspection.status,
+            deliveryAttemptNo: inspection.delivery.attemptNo,
+            createdAt: inspection.createdAt,
+            resolvedAt: inspection.resolvedAt,
+            decision: inspection.decision,
+          })),
+          delivery:
+            row.delivery === null
+              ? null
+              : {
+                  id: row.delivery.id,
+                  attemptNo: row.delivery.attemptNo,
+                  summary: row.delivery.summary,
+                  items: row.delivery.items,
+                  submittedAt: row.delivery.submittedAt,
+                },
+          createdAt: row.createdAt,
+          resolvedAt: row.resolvedAt,
+        };
+      });
     },
     async getInspection(id) {
       const row = await prisma.inspectionRequest.findUnique({ where: { id } });
