@@ -602,9 +602,9 @@ export class DepositService {
     auth: { signature?: string; transmissionTime?: string; rawPayload?: Uint8Array },
     rawPayload: unknown,
   ): Promise<{ status: DepositStatus; deposit: EscrowDeposit; isDuplicate?: boolean; reason?: string }> {
-    // 토스 일반 결제 웹훅은 서명 헤더가 없을 수 있다. 서명이 있으면 반드시 검증하고,
-    // 없으면 아래 PG 재조회(verifyPayment) 결과만 신뢰한다.
-    const hasSignature = auth.signature !== undefined || auth.transmissionTime !== undefined;
+    // 토스 일반 결제 웹훅은 transmission-time만 있고 서명 헤더가 없을 수 있다.
+    // 서명 헤더가 있으면 반드시 검증하고, 없으면 아래 PG 재조회 결과만 신뢰한다.
+    const hasSignature = auth.signature !== undefined;
     if (hasSignature && !verifyTossWebhookSignature({
       securityKey: this.webhookSecret,
       rawPayload: auth.rawPayload,

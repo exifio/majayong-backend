@@ -601,9 +601,9 @@ describe("C-01: Toss sandbox 예치·PG 검증·중복 방지", () => {
       eventType: "PAYMENT_STATUS_CHANGED",
     };
 
-    // 실행: 토스 일반 결제 웹훅처럼 서명 없이 원문만 보낸다.
+    // 실행: 토스 일반 결제 웹훅처럼 서명 없이 transmission-time만 보낸다.
     const result = await ctx.service.handleTossWebhook(
-      { rawPayload: Buffer.from(JSON.stringify(payload), "utf8") },
+      { rawPayload: Buffer.from(JSON.stringify(payload), "utf8"), transmissionTime: now.toISOString() },
       payload,
     );
 
