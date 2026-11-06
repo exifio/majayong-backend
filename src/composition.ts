@@ -109,6 +109,7 @@ export function createIntegrationServices(config: IntegrationConfig) {
     depositPort: completion,
     inspectionPort: inspections,
     cancellationPort: cancellations,
+    settlementPort: settlement,
     clock,
     transactionRunner: {
       run: (work) => config.prisma.$transaction((tx) => work(tx)),

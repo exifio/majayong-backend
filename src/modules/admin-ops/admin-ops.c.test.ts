@@ -877,4 +877,46 @@ describe("C-09: 관리자 블록/예치/분쟁/정산/감사 API", () => {
     assert.equal(typeof (service as unknown as Record<string, unknown>).resolveReport, "undefined");
     assert.equal(typeof (service as unknown as Record<string, unknown>).answerInquiry, "undefined");
   });
+
+  it("C-09-T09 관리자만 구간 지급을 릴리스하고 감사 로그를 남긴다", async () => {
+    // 준비: 정산 포트와 관리자 저장소
+    const repo = createInMemoryAdminRepository();
+    const released: string[] = [];
+    const service = new AdminOpsService({
+      repo,
+      catalogPort: {
+        async executeBlockAction(input) {
+          throw new Error(`unused catalog action: ${input.action}`);
+        },
+      },
+      settlementPort: {
+        async releaseInstallment({ installmentId }) {
+          released.push(installmentId);
+          return { id: installmentId, status: "RELEASED", releasedAt: baseTime };
+        },
+      },
+      clock: { now: () => baseTime },
+    });
+
+    // 확인: 의뢰인은 릴리스할 수 없다
+    await assert.rejects(
+      () => service.releaseInstallment({ userId: "client-1", role: "CLIENT" }, "inst-1", { reason: "수동 정산" }),
+      (err: unknown) => err instanceof AdminHttpError && err.status === 403,
+    );
+    assert.deepEqual(released, []);
+
+    // 실행: 관리자가 릴리스한다
+    const result = await service.releaseInstallment(
+      { userId: "admin-1", role: "ADMIN" },
+      "inst-1",
+      { reason: "수동 정산" },
+    );
+
+    // 확인: 포트 호출과 감사 로그가 남는다
+    assert.equal(result.status, "RELEASED");
+    assert.deepEqual(released, ["inst-1"]);
+    const logs = await repo.listEventLogs();
+    assert.equal(logs[0]?.actionType, "SETTLEMENT_MANUAL_RELEASED");
+    assert.equal(logs[0]?.targetId, "inst-1");
+  });
 });

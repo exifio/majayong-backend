@@ -224,6 +224,15 @@ export interface AdminOpsServiceOptions {
       cancelPayout: boolean;
     }): Promise<{ refundedAt: Date | null; cancelPayoutAt: Date | null }>;
   };
+  /** 수동 정산 지급. 실제 이체 없이 구간 상태만 RELEASED로 기록한다. */
+  settlementPort?: {
+    releaseInstallment(input: { installmentId: string }): Promise<{
+      id: string;
+      status: string;
+      releasedAt: Date | null;
+      holdReason?: string | null;
+    }>;
+  };
   clock?: { now(): Date };
   /** C 감사 로그와 A 카탈로그 변경을 같은 트랜잭션으로 묶는다. */
   transactionRunner?: { run<T>(work: (tx: unknown) => Promise<T>): Promise<T> };
@@ -235,6 +244,7 @@ export class AdminOpsService {
   private readonly depositPort?: AdminOpsServiceOptions["depositPort"];
   private readonly inspectionPort?: AdminOpsServiceOptions["inspectionPort"];
   private readonly cancellationPort?: AdminOpsServiceOptions["cancellationPort"];
+  private readonly settlementPort?: AdminOpsServiceOptions["settlementPort"];
   private readonly clock: { now(): Date };
   private readonly transactionRunner?: AdminOpsServiceOptions["transactionRunner"];
 
@@ -244,6 +254,7 @@ export class AdminOpsService {
     this.depositPort = options.depositPort;
     this.inspectionPort = options.inspectionPort;
     this.cancellationPort = options.cancellationPort;
+    this.settlementPort = options.settlementPort;
     this.clock = options.clock ?? { now: () => new Date() };
     this.transactionRunner = options.transactionRunner;
   }
@@ -539,6 +550,33 @@ export class AdminOpsService {
     });
 
     return updated;
+  }
+
+  async releaseInstallment(
+    actor: { userId: string; role: string },
+    installmentId: string,
+    input: { reason: string },
+  ): Promise<{ id: string; status: string; releasedAt: Date | null; holdReason?: string | null }> {
+    this.checkAdminRole(actor);
+    this.validateReason(input.reason);
+    if (!this.settlementPort) {
+      throw new AdminHttpError(503, "정산 지급을 사용할 수 없습니다.");
+    }
+
+    try {
+      const released = await this.settlementPort.releaseInstallment({ installmentId });
+      await this.repo.recordEvent({
+        actorUserId: actor.userId,
+        actionType: "SETTLEMENT_MANUAL_RELEASED",
+        targetType: "INSTALLMENT",
+        targetId: installmentId,
+        reason: input.reason,
+        occurredAt: this.clock.now(),
+      });
+      return released;
+    } catch (err) {
+      this.rethrowAsAdmin(err);
+    }
   }
 
   async listEventLogs(

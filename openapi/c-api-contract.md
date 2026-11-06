@@ -80,7 +80,10 @@
 | GET | `/admin/contracts/cancellation-queue` | 200 | `AdminCancellationContract[]` |
 | POST | `/admin/contracts/{contractId}/cancellation/decide` | 200 | 취소 판정 결과 |
 | POST | `/admin/contracts/{contractId}/settlement/mark-processed` | 200 | 정산 처리 결과 |
+| POST | `/admin/installments/{installmentId}/release` | 200 | 수동 지급 결과(`PaymentInstallment`, 실제 이체 없음) |
 | GET | `/admin/event-logs` | 200 | `EventLogEntity[]` |
+
+**수동 정산 지급(D-29)**: `POST /admin/installments/{installmentId}/release`는 ADMIN 전용이며 body `{reason}`이 필수다. 실제 이체/환불 없이 구간을 `RELEASED`로 기록하고 감사 로그(`SETTLEMENT_MANUAL_RELEASED`)를 남긴다. 공급자 정산 계좌가 인증(`payoutVerifiedAt`)되어야 하고, 최종 구간은 중간 구간이 먼저 `RELEASED`여야 한다. 이미 지급된 구간 재요청은 400이다.
 
 ## Webhook 예외
 

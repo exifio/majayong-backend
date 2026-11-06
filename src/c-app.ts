@@ -263,6 +263,16 @@ const ROUTES: Route[] = [
       }),
     }),
   ),
+  route(
+    "POST",
+    "/admin/installments/:installmentId/release",
+    "user",
+    async ({ actor, params, body }, s) => ({
+      body: await s.admin.releaseInstallment(actor, params.installmentId, {
+        reason: String(body.reason ?? ""),
+      }),
+    }),
+  ),
   route("GET", "/admin/event-logs", "user", async ({ actor, query }, s) => ({
     body: await s.admin.listEventLogs(actor, {
       actorUserId: query.get("actorUserId") ?? undefined,
