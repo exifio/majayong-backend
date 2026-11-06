@@ -144,6 +144,27 @@ export function createInspectionOpsPort(prisma: PrismaClient) {
   };
 }
 
+/**
+ * 취소 요청의 근거 메시지가 같은 계약의 당사자 글인지 검증한다.
+ */
+export function createCancellationMessagePort(prisma: PrismaClient) {
+  return {
+    async getMessage(id: string) {
+      const row = await prisma.applicationMessage.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          senderId: true,
+          application: { select: { contract: { select: { id: true } } } },
+        },
+      });
+      const contractId = row?.application.contract?.id;
+      if (row === null || row.senderId === null || contractId === undefined) return null;
+      return { id: row.id, contractId, authorUserId: row.senderId };
+    },
+  };
+}
+
 export function createPrismaPorts(prisma: PrismaClient): BPrismaPorts {  const run = <T>(work: (tx: unknown) => Promise<T>): Promise<T> =>
     prisma.$transaction((tx) => work(tx));
   const base = delegates(prisma);

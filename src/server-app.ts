@@ -29,6 +29,7 @@ import { breakExpiredContracts } from "./modules/contract/lifecycle.js";
 import { createPrismaContractUnitOfWork } from "./modules/contract/prisma-adapter.js";
 import type { ProjectPorts } from "./modules/project/ports.js";
 import {
+  createCancellationMessagePort,
   createInspectionOpsPort,
   createProjectCandidateDb,
   createAProjectDb,
@@ -158,6 +159,7 @@ export function createServerApp(): ServerApp {
       },
       ...(tossVerifier === undefined ? {} : { tossVerifier }),
       inspectionOps: createInspectionOpsPort(db),
+      cancellationMessages: createCancellationMessagePort(db),
       projectDeadlines: (at: Date) => runProjectDeadlineBatch(db, projectPorts, at),
       contractBreaks: (at: Date) => breakExpiredContracts(contractJobUow, { now: at }),
       catalogAdmin: {
