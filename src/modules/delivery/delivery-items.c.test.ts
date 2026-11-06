@@ -754,4 +754,42 @@ describe("C-03: 항목별 납품·승인·보완 요청", () => {
       (err: unknown) => err instanceof DeliveryHttpError && err.status === 403,
     );
   });
+
+  it("C-03-T12 구간 승인 불가 시 항목 승인을 남기지 않는다", async () => {
+    // 준비: 구간 승인 사전 검사가 실패하는 정산 포트
+    const { repo, contract, installment, item1, item2 } = createTestSetup();
+    const service = new DeliveryService({
+      repo,
+      clock: { now: () => baseTime },
+      settlementPort: {
+        async assertApprovable() {
+          throw new DeliveryHttpError(400, "중간 구간이 먼저 지급되어야 합니다.");
+        },
+        async approveInstallment() {
+          throw new Error("사전 검사 실패 시 구간 승인을 호출하면 안 된다");
+        },
+      },
+    });
+    const client = { userId: contract.clientUserId, role: "CLIENT" };
+    const supplier = { userId: contract.supplierUserId, role: "SUPPLIER" };
+    const delivery = await service.submitDelivery(supplier, {
+      installmentId: installment.id,
+      items: [
+        { contractItemId: item1.id, links: [], files: [], howToCheck: "확인1" },
+        { contractItemId: item2.id, links: [], files: [], howToCheck: "확인2" },
+      ],
+    });
+
+    // 실행: 마지막 항목이 아닌 첫 항목은 정상 승인된다.
+    await service.approveItem(client, { contractItemId: item1.id, deliveryId: delivery.id });
+
+    // 실행 및 확인: 마지막 항목은 구간 승인 사전 검사에서 막혀 승인되지 않는다.
+    await assert.rejects(
+      () => service.approveItem(client, { contractItemId: item2.id, deliveryId: delivery.id }),
+      (err: unknown) => err instanceof DeliveryHttpError && /중간 구간/.test(err.message),
+    );
+    assert.ok((await repo.getContractItem(item1.id))?.approvedAt);
+    assert.equal((await repo.getContractItem(item2.id))?.approvedAt, null);
+    assert.equal((await repo.getDelivery(delivery.id))?.status, "PARTIALLY_APPROVED");
+  });
 });

@@ -641,6 +641,60 @@ export class SettlementService {
     }
   }
 
+  /**
+   * 승인 쓰기 전에 막을 수 있는 조건을 먼저 검사한다.
+   * 납품 항목 승인과 구간 승인이 다른 저장소라, 실패를 항목 승인 뒤에 발견하면 부분 쓰기가 남는다.
+   */
+  async assertApprovable(input: {
+    contractId: string;
+    installmentId: string;
+    assumingApprovedItemId?: string;
+  }): Promise<void> {
+    const contract = await this.repo.getContract(input.contractId);
+    if (!contract) throw new SettlementHttpError(404, "계약을 찾을 수 없습니다.");
+
+    const installment = await this.repo.getInstallment(input.installmentId);
+    if (!installment || installment.contractId !== contract.id) {
+      throw new SettlementHttpError(404, "구간을 찾을 수 없습니다.");
+    }
+
+    this.assertNotCancelled(contract, "구간을 승인할");
+    if (installment.status === "APPROVED" || installment.status === "RELEASED") return;
+
+    await this.assertStageApprovable(contract, installment, input.assumingApprovedItemId);
+  }
+
+  private async assertStageApprovable(
+    contract: SettlementContractInfo,
+    installment: SettlementInstallmentEntity,
+    assumingApprovedItemId?: string,
+  ): Promise<void> {
+    if (contract.status !== "ACTIVE") {
+      throw new SettlementHttpError(409, "진행 중(ACTIVE) 계약만 구간을 승인할 수 있습니다.");
+    }
+
+    const items = await this.repo.listContractItems(contract.id);
+    const stageItems = items.filter((i) => i.stage === installment.stage);
+    const unapproved = stageItems.some(
+      (i) => i.approvedAt === null && i.id !== assumingApprovedItemId,
+    );
+
+    if (unapproved) {
+      throw new SettlementHttpError(
+        400,
+        "해당 구간의 모든 계약 항목이 승인되어야 지급 승인 상태로 진입할 수 있습니다.",
+      );
+    }
+
+    if (installment.stage === "FINAL") {
+      const allInstallments = await this.repo.listInstallments(contract.id);
+      const interim = allInstallments.find((i) => i.stage === "INTERIM");
+      if (!interim || interim.status !== "RELEASED") {
+        throw new SettlementHttpError(400, "중간 구간이 먼저 지급되어야 합니다.");
+      }
+    }
+  }
+
   async approveInstallment(input: {
     contractId: string;
     installmentId: string;
@@ -657,28 +711,8 @@ export class SettlementService {
     if (installment.status === "APPROVED" || installment.status === "RELEASED") {
       return installment;
     }
-    if (contract.status !== "ACTIVE") {
-      throw new SettlementHttpError(409, "진행 중(ACTIVE) 계약만 구간을 승인할 수 있습니다.");
-    }
 
-    const items = await this.repo.listContractItems(contract.id);
-    const stageItems = items.filter((i) => i.stage === installment.stage);
-    const unapproved = stageItems.some((i) => i.approvedAt === null);
-
-    if (unapproved) {
-      throw new SettlementHttpError(
-        400,
-        "해당 구간의 모든 계약 항목이 승인되어야 지급 승인 상태로 진입할 수 있습니다.",
-      );
-    }
-
-    if (installment.stage === "FINAL") {
-      const allInstallments = await this.repo.listInstallments(contract.id);
-      const interim = allInstallments.find((i) => i.stage === "INTERIM");
-      if (!interim || interim.status !== "RELEASED") {
-        throw new SettlementHttpError(400, "중간 구간이 먼저 지급되어야 합니다.");
-      }
-    }
+    await this.assertStageApprovable(contract, installment);
 
     const now = this.clock.now();
     if (!contract.payoutVerifiedAt) {

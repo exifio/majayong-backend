@@ -102,6 +102,12 @@ export interface NotificationPorts {
 
 export interface SettlementApprovalPort {
   approveInstallment(input: { contractId: string; installmentId: string }): Promise<unknown>;
+  /** 항목 승인 쓰기 전에 구간 승인 가능 여부를 확인한다. */
+  assertApprovable?(input: {
+    contractId: string;
+    installmentId: string;
+    assumingApprovedItemId?: string;
+  }): Promise<void>;
 }
 
 export interface InspectionOpsPorts {
@@ -479,6 +485,21 @@ export class DeliveryService {
 
     if (item.approvedAt) {
       return item;
+    }
+
+    // 마지막 항목이면 구간 승인 조건을 먼저 확인한다. 항목 승인 뒤에 실패하면 부분 쓰기가 남는다.
+    const stageItemsBefore = (await this.repo.listContractItemsByContractId(contract.id)).filter(
+      (i) => i.stage === item.stage,
+    );
+    const wouldBeAllApproved = stageItemsBefore.every(
+      (i) => i.id === item.id || i.approvedAt !== null,
+    );
+    if (wouldBeAllApproved) {
+      await this.settlementPort?.assertApprovable?.({
+        contractId: contract.id,
+        installmentId: delivery.installmentId,
+        assumingApprovedItemId: item.id,
+      });
     }
 
     const updated = await this.repo.updateContractItem(item.id, {
