@@ -8,6 +8,12 @@
       "memory": 1024
     }
   },
+  "crons": [
+    {
+      "path": "/api/v1/internal/jobs/run",
+      "schedule": "*/15 * * * *"
+    }
+  ],
   "rewrites": [
     { "source": "/health", "destination": "/api/health" },
     { "source": "/api/v1/:path*", "destination": "/api/v1/[...path]?path=:path*" }

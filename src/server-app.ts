@@ -180,7 +180,7 @@ export function createServerApp(): ServerApp {
       } catch {
         return null;
       }
-    }, deferUnmatched: true },
+    }, deferUnmatched: true, cronSecret: process.env.CRON_SECRET },
   );
 
   const app = createApp({

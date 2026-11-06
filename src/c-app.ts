@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { AdminOpsService } from "./modules/admin-ops/index.ts";
 import type { CancellationService } from "./modules/cancellation/index.ts";
@@ -32,6 +32,8 @@ export interface AppOptions {
   /** 토큰/세션 검증. null이면 401. 통합 담당이 실제 인증으로 교체한다. */
   authenticate(req: IncomingMessage): Promise<HttpActor | null> | HttpActor | null;
   maxBodyBytes?: number;
+  /** Vercel Cron 등 외부 스케줄러가 `/internal/jobs/run`을 호출할 때 쓰는 secret. */
+  cronSecret?: string;
   /**
    * true면 매칭되지 않은 경로에 C 자체 404를 쓰지 않고 반환한다.
    * 통합 앱이 A/B와 같은 공통 오류 봉투로 응답할 때 쓴다. 단독 C 서버는 기본값(false)을 유지한다.
@@ -51,7 +53,7 @@ interface RouteContext {
 interface Route {
   method: string;
   parts: string[];
-  auth: "user" | "webhook";
+  auth: "user" | "webhook" | "cron";
   handle(ctx: RouteContext, services: AppServices): Promise<{ status?: number; body: unknown }>;
 }
 
@@ -284,6 +286,12 @@ const ROUTES: Route[] = [
     }
     return { body: await s.runDueJobs(new Date()) };
   }),
+  route("GET", "/internal/jobs/run", "cron", async (_ctx, s) => {
+    if (!s.runDueJobs) {
+      throw Object.assign(new Error("배치 실행을 사용할 수 없습니다."), { status: 503 });
+    }
+    return { body: await s.runDueJobs(new Date()) };
+  }),
   route("GET", "/admin/event-logs", "user", async ({ actor, query }, s) => ({
     body: await s.admin.listEventLogs(actor, {
       actorUserId: query.get("actorUserId") ?? undefined,
@@ -389,6 +397,13 @@ function writeJson(
   res.end(JSON.stringify(body));
 }
 
+function matchesSecret(header: string | undefined, secret: string | undefined): boolean {
+  if (header === undefined || secret === undefined || secret.length === 0) return false;
+  const actual = Buffer.from(header);
+  const expected = Buffer.from(`Bearer ${secret}`);
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
 export function createHttpHandler(options: AppOptions) {
   const maxBodyBytes = options.maxBodyBytes ?? 1_000_000;
 
@@ -411,6 +426,24 @@ export function createHttpHandler(options: AppOptions) {
       const body = parsedBody.body;
       const rawBody = parsedBody.rawBody;
       let actor: HttpActor | null = null;
+      if (matched.route.auth === "cron") {
+        if (!matchesSecret(req.headers.authorization, options.cronSecret)) {
+          const unavailable = options.cronSecret === undefined;
+          writeJson(
+            res,
+            unavailable ? 503 : 401,
+            {
+              error: {
+                code: unavailable ? "CRON_UNAVAILABLE" : "UNAUTHORIZED",
+                message: unavailable ? "배치 실행이 설정되지 않았습니다." : "UNAUTHORIZED",
+                requestId,
+              },
+            },
+            requestId,
+          );
+          return;
+        }
+      }
       if (matched.route.auth === "user") {
         actor = await options.authenticate(req);
         if (!actor) {

@@ -23,7 +23,11 @@ describe("INT-C-01: HTTP 라우트", () => {
     };
   }
 
-  async function start(servicesValue: AppServices, auth?: (req: import("node:http").IncomingMessage) => HttpActor | null) {
+  async function start(
+    servicesValue: AppServices,
+    auth?: (req: import("node:http").IncomingMessage) => HttpActor | null,
+    cronSecret?: string,
+  ) {
     const authenticate =
       auth ??
       ((req: import("node:http").IncomingMessage): HttpActor | null => {
@@ -32,7 +36,13 @@ describe("INT-C-01: HTTP 라우트", () => {
         if (typeof userId !== "string" || typeof role !== "string") return null;
         return { userId, role };
       });
-    const server = createServer(createHttpHandler({ services: servicesValue, authenticate }));
+    const server = createServer(
+      createHttpHandler({
+        services: servicesValue,
+        authenticate,
+        ...(cronSecret === undefined ? {} : { cronSecret }),
+      }),
+    );
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const { port } = server.address() as AddressInfo;
     return {
@@ -289,6 +299,56 @@ describe("INT-C-01: HTTP 라우트", () => {
       assert.equal(res.status, 200);
       const body = (await res.json()) as { data?: { actionsCount?: number } };
       assert.equal(body.data?.actionsCount, 1);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("Cron 배치 실행은 CRON_SECRET이 일치할 때만 동작한다", async () => {
+    // 준비
+    const app = await start(
+      services({
+        runDueJobs: async () => ({ success: true, actionsCount: 1, failures: [] }),
+      }),
+      undefined,
+      "test-cron-secret",
+    );
+    try {
+      // 실행: 헤더 없음
+      const missing = await fetch(`${app.baseUrl}/internal/jobs/run`);
+      // 확인: 401
+      assert.equal(missing.status, 401);
+
+      // 실행: 잘못된 secret
+      const wrong = await fetch(`${app.baseUrl}/internal/jobs/run`, {
+        headers: { authorization: "Bearer wrong-secret" },
+      });
+      // 확인: 401
+      assert.equal(wrong.status, 401);
+
+      // 실행: 올바른 secret
+      const ok = await fetch(`${app.baseUrl}/internal/jobs/run`, {
+        headers: { authorization: "Bearer test-cron-secret" },
+      });
+      // 확인: 200과 배치 결과
+      assert.equal(ok.status, 200);
+      const body = (await ok.json()) as { data?: { actionsCount?: number } };
+      assert.equal(body.data?.actionsCount, 1);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("CRON_SECRET이 없으면 Cron 배치 실행을 503으로 막는다", async () => {
+    // 준비
+    const app = await start(services());
+    try {
+      // 실행
+      const res = await fetch(`${app.baseUrl}/internal/jobs/run`, {
+        headers: { authorization: "Bearer anything" },
+      });
+      // 확인: 설정 없음
+      assert.equal(res.status, 503);
     } finally {
       await app.close();
     }

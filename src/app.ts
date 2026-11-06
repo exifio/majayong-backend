@@ -376,7 +376,11 @@ export function createApp(options: AppOptions): Express {
 
   const extraAuth = requireActorMiddleware(options);
   // Toss webhook HMAC signature is checked against raw request bytes in the C fallback.
-  const PUBLIC_API_PATHS = new Set(["/api/v1/integrations/toss/payment-events"]);
+  // Cron 경로는 세션 대신 CRON_SECRET을 C fallback에서 검증한다.
+  const PUBLIC_API_PATHS = new Set([
+    "/api/v1/integrations/toss/payment-events",
+    "/api/v1/internal/jobs/run",
+  ]);
   for (const extra of options.routers ?? []) {
     app.use("/api/v1", (req, res, next) => {
       if (PUBLIC_API_PATHS.has((req.originalUrl ?? "").split("?")[0] ?? "")) {
