@@ -95,7 +95,11 @@ export function createServerApp(): ServerApp {
       })
     : undefined;
   const integrationDb = createPrismaIntegrationDb(db);
-  const passwordResetMailer = createPasswordResetMailerFromEnv();
+  const passwordResetMailer = createPasswordResetMailerFromEnv() ??
+    // ponytail: 샌드박스 데모용 no-op mailer. production에서는 env를 켜지 않는다.
+    (process.env.PASSWORD_RESET_SANDBOX === "true"
+      ? { async sendPasswordReset() {} }
+      : undefined);
   const sendPasswordReset =
     passwordResetMailer === undefined
       ? undefined
@@ -207,6 +211,16 @@ export function createServerApp(): ServerApp {
     profile: {
       encryptionKey: process.env.PROFILE_DATA_KEY,
       supplierNdaVersion: process.env.SUPPLIER_NDA_VERSION,
+      // ponytail: 샌드박스 데모용. 4자 이상 코드면 인증 성공으로 처리한다.
+      ...(process.env.PAYOUT_VERIFICATION_SANDBOX === "true"
+        ? {
+            payoutVerification: {
+              async verify(input: { userId: string; bank: string; accountNo: string; holder: string; code: string }) {
+                return input.code.trim().length >= 4;
+              },
+            },
+          }
+        : {}),
     },
     routers: bRouters,
     fallback: cHandler,
