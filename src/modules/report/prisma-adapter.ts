@@ -8,6 +8,10 @@ import {
   createNotificationOnceInTransaction,
   type NotificationTx,
 } from '../notification/notifications.js';
+import {
+  createPrismaNotificationTx,
+  type NotificationDelegate,
+} from '../notification/prisma-adapter.js';
 import type {
   MyReportQueryPort,
   ReportActor,
@@ -101,7 +105,7 @@ export interface ReportDbClient {
   readonly eventLog: {
     create(input: { readonly data: Readonly<Record<string, unknown>> }): Promise<unknown>;
   };
-  readonly notification: NotificationTx;
+  readonly notification: NotificationDelegate;
   readonly user?: {
     updateMany(input: { readonly where: Readonly<Record<string, unknown>>; readonly data: Readonly<Record<string, unknown>> }): Promise<{ readonly count: number }>;
   };
@@ -188,6 +192,7 @@ export function createReportTx(
   accounts: ReportAccountActionPort,
   now: () => Date,
 ): ReportTx {
+  const notifications: NotificationTx = createPrismaNotificationTx({ notification: db.notification });
   return {
     async findReportableMessage(messageId) {
       const row = await db.applicationMessage.findUnique({
@@ -272,7 +277,7 @@ export function createReportTx(
     },
 
     async notifyReporter(input) {
-      await createNotificationOnceInTransaction(db.notification, {
+      await createNotificationOnceInTransaction(notifications, {
         userId: input.userId,
         type: 'REPORT_REVIEWED',
         targetId: input.reportId,

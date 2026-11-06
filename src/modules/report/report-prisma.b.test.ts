@@ -94,16 +94,15 @@ function reportDb(rows: ReportRow[]) {
     },
     eventLog: { create: unused },
     notification: {
-      findByKey: async () => null,
+      findUnique: async () => null,
       async create(input) {
-        notifications.push({ ...input });
-        return { ...input, id: 'n1', isRead: false } satisfies NotificationDbRow;
+        notifications.push({ ...input.data });
+        return { id: 'n1', ...input.data, isRead: false } satisfies NotificationDbRow;
       },
-      refreshBundled: unused,
-      listRecent: async () => [],
-      countUnread: async () => 0,
-      markRead: async () => false,
-      markAllRead: async () => 0,
+      update: unused,
+      findMany: async () => [],
+      count: async () => 0,
+      updateMany: async () => ({ count: 0 }),
     },
   };
   return { db, notifications };
