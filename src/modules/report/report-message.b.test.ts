@@ -318,6 +318,7 @@ class FakeInquiryTx implements InquiryTx {
   readonly accessibleContracts: readonly ContractAccess[];
   readonly notifications: { userId: string; inquiryId: string }[] = [];
   readonly events: { userId: string; type: string; payload: Readonly<Record<string, unknown>> }[] = [];
+  bindCount: number | null = null;
   private nextId = 1;
   constructor(accessibleContracts: readonly ContractAccess[] = []) { this.accessibleContracts = accessibleContracts; }
   async canAccessContract(input: ContractAccess): Promise<boolean> {
@@ -335,8 +336,10 @@ class FakeInquiryTx implements InquiryTx {
     this.inquiries.push(record);
     return record;
   }
-  async findInquiry(id: string): Promise<InquiryRecord | null> { return this.inquiries.find((item) => item.id === id) ?? null; }
-  async listInquiries(input: { userId?: string; status?: InquiryRecord['status'] }): Promise<readonly InquiryRecord[]> {
+  async bindInquiryFiles(input: { inquiryId: string; userId: string; fileIds: readonly string[] }): Promise<number> {
+    return this.bindCount ?? input.fileIds.length;
+  }
+  async findInquiry(id: string): Promise<InquiryRecord | null> { return this.inquiries.find((item) => item.id === id) ?? null; }  async listInquiries(input: { userId?: string; status?: InquiryRecord['status'] }): Promise<readonly InquiryRecord[]> {
     return this.inquiries.filter((item) => (input.userId === undefined || item.userId === input.userId) &&
       (input.status === undefined || item.status === input.status));
   }
@@ -409,6 +412,33 @@ describe('B-07-T05/T06/T07 1:1 문의 권한·첨부·답변', () => {
       actor: INTRUDER, category: 'CANCEL', contractId: 'contract-1', title: '관련 문의', body: '내용', now: FIXED_NOW,
     }), isInquiryError(404, 'CONTRACT_NOT_FOUND'));
     assert.equal(uow.tx.inquiries.length, 0);
+  });
+
+  it('presign 파일을 문의에 연결하지 못하면 400', async () => {
+    // 준비: 실제로는 UnitOfWork 트랜잭션이 함께 롤백된다.
+    const tx = new FakeInquiryTx();
+    tx.bindCount = 0;
+    const uow = new FakeInquiryUnitOfWork(tx);
+
+    // 실행 및 확인
+    await assert.rejects(createInquiry(uow, {
+      actor: CLIENT, category: 'OTHER', title: '첨부', body: '내용',
+      attachments: [{ fileId: 'file-1', url: '', name: 'a.png', size: 10 }], now: FIXED_NOW,
+    }), isInquiryError(400, 'INVALID_ATTACHMENT'));
+  });
+
+  it('presign 파일은 문의 생성 시 다운로드 URL로 정규화한다', async () => {
+    // 준비
+    const uow = new FakeInquiryUnitOfWork();
+
+    // 실행
+    const created = await createInquiry(uow, {
+      actor: CLIENT, category: 'OTHER', title: '첨부', body: '내용',
+      attachments: [{ fileId: 'file-1', url: '', name: 'a.png', size: 10 }], now: FIXED_NOW,
+    });
+
+    // 확인
+    assert.equal(created.attachments[0]?.url, '/api/v1/uploads/file-1/download');
   });
 
   it('첨부 4개·10MB 초과를 거부한다', async () => {

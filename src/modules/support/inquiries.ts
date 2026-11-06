@@ -4,6 +4,8 @@ export type InquiryCategory = (typeof INQUIRY_CATEGORIES)[number];
 export type InquiryStatus = 'WAITING' | 'ANSWERED';
 
 export interface InquiryAttachment {
+  /** presign으로 먼저 올린 파일을 문의 생성 시 연결할 때 쓴다. */
+  readonly fileId?: string;
   readonly url: string;
   readonly name: string;
   readonly size: number;
@@ -35,6 +37,12 @@ export interface InquiryTx {
     readonly attachments: readonly InquiryAttachment[];
     readonly createdAt: Date;
   }): Promise<InquiryRecord>;
+  /** presign으로 올린 SUPPORT_INQUIRY 파일을 문의에 귀속한다. 반환값은 갱신된 파일 수. */
+  bindInquiryFiles(input: {
+    readonly inquiryId: string;
+    readonly userId: string;
+    readonly fileIds: readonly string[];
+  }): Promise<number>;
   findInquiry(inquiryId: string): Promise<InquiryRecord | null>;
   listInquiries(input: { readonly userId?: string; readonly status?: InquiryStatus }): Promise<readonly InquiryRecord[]>;
   answerInquiry(input: {
@@ -124,6 +132,7 @@ const MAX_ATTACHMENTS = 3;
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const SAFE_ATTACHMENT_URL = /^\/(?!\/)[A-Za-z0-9/_:.-]+$/;
 const SAFE_ATTACHMENT_NAME = /^[^/\\\u0000-\u001f]{1,255}$/;
+const SAFE_FILE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 function invalid(code: string, message: string): InquiryError {
   return new InquiryError(400, code, message);
@@ -135,9 +144,17 @@ function validCategory(value: unknown): value is InquiryCategory {
 
 function validateAttachments(attachments: readonly InquiryAttachment[]): void {
   if (attachments.length > MAX_ATTACHMENTS) throw invalid('TOO_MANY_ATTACHMENTS', '첨부 파일은 최대 3개입니다.');
+  const fileIds = new Set<string>();
   for (const attachment of attachments) {
-    if (!Number.isSafeInteger(attachment.size) || attachment.size < 0 ||
-        !SAFE_ATTACHMENT_URL.test(attachment.url) || !SAFE_ATTACHMENT_NAME.test(attachment.name)) {
+    if (attachment.fileId !== undefined) {
+      if (!SAFE_FILE_ID.test(attachment.fileId) || fileIds.has(attachment.fileId)) {
+        throw invalid('INVALID_ATTACHMENT', '첨부 파일 정보가 올바르지 않습니다.');
+      }
+      fileIds.add(attachment.fileId);
+    } else if (!SAFE_ATTACHMENT_URL.test(attachment.url)) {
+      throw invalid('INVALID_ATTACHMENT', '첨부 파일 정보가 올바르지 않습니다.');
+    }
+    if (!Number.isSafeInteger(attachment.size) || attachment.size < 0 || !SAFE_ATTACHMENT_NAME.test(attachment.name)) {
       throw invalid('INVALID_ATTACHMENT', '첨부 파일 정보가 올바르지 않습니다.');
     }
     if (attachment.size > MAX_ATTACHMENT_BYTES) throw invalid('ATTACHMENT_TOO_LARGE', '첨부 파일은 개당 10MB 이하여야 합니다.');
@@ -153,7 +170,12 @@ async function createInquiryImpl(uow: InquiryUnitOfWork, input: CreateInquiryInp
   const body = input.body.trim();
   if (title.length === 0) throw invalid('INVALID_TITLE', '제목을 입력해 주세요.');
   if (body.length === 0) throw invalid('INVALID_BODY', '문의 내용을 입력해 주세요.');
-  const attachments = input.attachments ?? [];
+  const rawAttachments = input.attachments ?? [];
+  const attachments = rawAttachments.map((attachment) =>
+    attachment.fileId === undefined
+      ? attachment
+      : { ...attachment, url: `/api/v1/uploads/${attachment.fileId}/download` },
+  );
   validateAttachments(attachments);
   const contractId = input.contractId?.trim() || null;
 
@@ -165,6 +187,11 @@ async function createInquiryImpl(uow: InquiryUnitOfWork, input: CreateInquiryInp
       userId: input.actor.userId, category: input.category, contractId,
       title, body, attachments: [...attachments], createdAt: input.now,
     });
+    const fileIds = attachments.flatMap((attachment) => attachment.fileId === undefined ? [] : [attachment.fileId]);
+    if (fileIds.length > 0) {
+      const bound = await tx.bindInquiryFiles({ inquiryId: inquiry.id, userId: input.actor.userId, fileIds });
+      if (bound !== fileIds.length) throw invalid('INVALID_ATTACHMENT', '첨부 파일을 확인할 수 없습니다.');
+    }
     await tx.logEvent({ userId: input.actor.userId, type: 'SUPPORT_INQUIRY_SUBMITTED',
       payload: { inquiryId: inquiry.id, category: inquiry.category } });
     return inquiry;

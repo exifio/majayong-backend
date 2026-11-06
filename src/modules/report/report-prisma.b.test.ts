@@ -275,6 +275,12 @@ function inquiryDb(rows: InquiryRow[]) {
       },
     },
     eventLog: { create: unused },
+    fileAttachment: {
+      async updateMany(input) {
+        const ids = (input.where as { id?: { in?: readonly string[] } }).id?.in ?? [];
+        return { count: ids.length };
+      },
+    },
     notification: {
       async findUnique(input) {
         const key = input.where.userId_type_targetId;

@@ -186,9 +186,7 @@ export class FileService {
     if ((input.purpose === "DELIVERY" || input.purpose === "CONTRACT_DOCUMENT") && !input.contractId) {
       throw new FileHttpError(400, "계약 파일은 contractId가 필요합니다.");
     }
-    if (input.purpose === "SUPPORT_INQUIRY" && !input.inquiryId) {
-      throw new FileHttpError(400, "문의 첨부는 inquiryId가 필요합니다.");
-    }
+    // 문의 첨부는 문의 생성 전에 업로드할 수 있다. inquiryId가 있으면 소유권·개수를 추가 검증한다.
 
     const isSupportInquiry = input.purpose === "SUPPORT_INQUIRY";
     const maxLimit = isSupportInquiry ? 10 * 1024 * 1024 : 50 * 1024 * 1024;

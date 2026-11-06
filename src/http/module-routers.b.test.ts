@@ -189,6 +189,7 @@ describe('Gate 0 HTTP: 나머지 모듈 라우터 장착', () => {
           work({
             canAccessContract: async () => true,
             createInquiry: unused,
+            bindInquiryFiles: async () => 0,
             findInquiry: unused,
             listInquiries: async () => [],
             answerInquiry: unused,

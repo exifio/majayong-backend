@@ -52,6 +52,12 @@ export interface InquiryDbClient {
   readonly eventLog: {
     create(input: { readonly data: Readonly<Record<string, unknown>> }): Promise<unknown>;
   };
+  readonly fileAttachment: {
+    updateMany(input: {
+      readonly where: Readonly<Record<string, unknown>>;
+      readonly data: Readonly<Record<string, unknown>>;
+    }): Promise<{ readonly count: number }>;
+  };
   readonly notification: {
     findUnique(input: {
       readonly where: {
@@ -83,8 +89,13 @@ function readAttachments(value: unknown): readonly InquiryAttachment[] {
     ) {
       throw new Error('INVALID_INQUIRY_ATTACHMENTS');
     }
-    const record = item as { url: string; name: string; size: number };
-    return { url: record.url, name: record.name, size: record.size };
+    const record = item as { fileId?: unknown; url: string; name: string; size: number };
+    return {
+      ...(typeof record.fileId === 'string' ? { fileId: record.fileId } : {}),
+      url: record.url,
+      name: record.name,
+      size: record.size,
+    };
   });
 }
 
@@ -140,6 +151,20 @@ export function createInquiryTx(db: InquiryDbClient, now: () => Date): InquiryTx
           },
         }),
       );
+    },
+
+    async bindInquiryFiles(input) {
+      if (input.fileIds.length === 0) return 0;
+      const result = await db.fileAttachment.updateMany({
+        where: {
+          id: { in: [...input.fileIds] },
+          uploaderId: input.userId,
+          purpose: 'SUPPORT_INQUIRY',
+          inquiryId: null,
+        },
+        data: { inquiryId: input.inquiryId },
+      });
+      return result.count;
     },
 
     async findInquiry(inquiryId) {

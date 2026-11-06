@@ -42,9 +42,15 @@ function attachmentsOf(value: unknown): readonly InquiryAttachment[] | undefined
     throw new HttpError(400, 'INVALID_REQUEST', 'attachments는 배열이어야 합니다.');
   }
   return value.map((item) => {
-    const record = bodyObject(item, ['url', 'name', 'size']);
+    const record = bodyObject(item, ['fileId', 'url', 'name', 'size']);
+    const fileId = text(record.fileId, 'fileId', { max: 64, optional: true });
+    const url = nullableText(record.url, 'url', 2048);
+    if (fileId === undefined && (url === undefined || url === null)) {
+      throw new HttpError(400, 'INVALID_REQUEST', 'url 또는 fileId가 필요합니다.');
+    }
     return {
-      url: text(record.url, 'url', { max: 2048 }) as string,
+      ...(fileId === undefined ? {} : { fileId }),
+      url: url ?? '',
       name: text(record.name, 'name', { max: 255 }) as string,
       size: integer(record.size, 'size', { min: 1, max: 10 * 1024 * 1024 }),
     };

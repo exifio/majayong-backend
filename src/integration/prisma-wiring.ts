@@ -102,6 +102,7 @@ function delegates(db: Db) {
       },
       contract: { findFirst: db.contract.findFirst.bind(db.contract) },
       eventLog: { create: db.eventLog.create.bind(db.eventLog) },
+      fileAttachment: { updateMany: db.fileAttachment.updateMany.bind(db.fileAttachment) },
       notification: db.notification,
     },
     market: {

@@ -296,17 +296,14 @@ describe("C-08: 파일 presign·권한 관리", () => {
       (err: unknown) => err instanceof FileHttpError && err.status === 400,
     );
 
-    // 실행 및 확인: 문의 목적에 inquiryId가 없으면 거부
-    await assert.rejects(
-      () =>
-        service.createPresignedUpload(client, {
-          purpose: "SUPPORT_INQUIRY",
-          fileName: "log.txt",
-          fileSize: 1024,
-          mimeType: "text/plain",
-        }),
-      (err: unknown) => err instanceof FileHttpError && err.status === 400,
-    );
+    // 실행 및 확인: 문의 첨부는 inquiryId 없이 먼저 업로드할 수 있다.
+    const inquiryUpload = await service.createPresignedUpload(client, {
+      purpose: "SUPPORT_INQUIRY",
+      fileName: "log.txt",
+      fileSize: 1024,
+      mimeType: "text/plain",
+    });
+    assert.ok(inquiryUpload.fileId);
 
     // 실행 및 확인: 포트폴리오는 공급자만 가능
     await assert.rejects(
