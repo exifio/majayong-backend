@@ -51,7 +51,7 @@ export function createIntegrationServices(config: IntegrationConfig) {
     contractsPort: repos.contractsPort,
     marketplacePort: config.ports.marketplace,
     transactionRunner: {
-      run: (work) => config.prisma.$transaction((tx) => work(tx as never)),
+      run: (work) => config.prisma.$transaction((tx) => work(tx as never), { maxWait: 10_000, timeout: 20_000 }),
     },
     clock,
   });
