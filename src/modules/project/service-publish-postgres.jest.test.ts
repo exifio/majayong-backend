@@ -257,6 +257,27 @@ describe("A-05 프로젝트 게시", () => {
     expect(await db.eventLog.count({ where: { projectId: project.id, type: "PROJECT_PUBLISHED" } })).toBe(1);
   });
 
+  it("선택 기능의 업종 코드가 달라도 첫 기능 업종으로 게시한다", async () => {
+    // 준비: 서로 다른 업종 코드가 붙은 두 개의 선택 기능
+    const { clientId, draftId } = await makeDraft();
+    const suggested = await db.draftBlock.findFirstOrThrow({
+      where: { draftId, status: "SUGGESTED" },
+      select: { id: true, blockId: true },
+    });
+    await db.blockCatalog.update({ where: { id: suggested.blockId }, data: { industryCode: "OTHER_INDUSTRY" } });
+    await db.draftBlock.update({ where: { id: suggested.id }, data: { status: "ADDED", sortOrder: 1 } });
+    const baseUrl = await startServer({ userId: clientId, role: Role.CLIENT });
+
+    // 실행: 업종 코드 불일치가 있는 명세 게시
+    const response = await publish(baseUrl, draftId);
+
+    // 확인: 두 기능을 포함해 게시하고 첫 기능 업종으로 프로젝트를 분류한다
+    expect(response.status).toBe(201);
+    const project = await db.project.findUniqueOrThrow({ where: { draftId } });
+    expect(project.industryCode).toBe("RESERVATION_RESTAURANT");
+    expect(await db.specItem.count({ where: { projectId: project.id } })).toBe(2);
+  });
+
   it("연결된 초안을 식별하지 못하는 동의 버전을 거부한다", async () => {
     // 준비: 초안과 게시 서버
     const { clientId, draftId } = await makeDraft();

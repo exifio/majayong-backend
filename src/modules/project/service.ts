@@ -137,8 +137,6 @@ export async function publishDraft(
       throw new DraftError("INVALID_RECRUITMENT_PERIOD", 422);
     }
     if (draft.blocks.length === 0) throw new DraftError("NO_SELECTED_BLOCKS", 409);
-    const industryCodes = new Set(draft.blocks.map(block => block.block.industryCode));
-    if (industryCodes.size !== 1) throw new DraftError("BLOCK_INDUSTRY_MISMATCH", 422);
 
     const title = projectTitle(draft.blocks.map(block => block.block.name));
     const summary = draft.blocks.map(block => block.block.description).join("\n\n");
