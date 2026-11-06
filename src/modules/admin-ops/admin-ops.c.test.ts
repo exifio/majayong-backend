@@ -42,6 +42,16 @@ describe("C-09: 관리자 블록/예치/분쟁/정산/감사 API", () => {
       title: "예약 달력",
       unitPrice: 300_000,
       isActive: true,
+      description: "예약 달력",
+      functionSummary: "예약 달력",
+      industryCode: "FOOD",
+      techTags: [],
+      conditions: [],
+      priceBasis: "test",
+      source: "TEAM",
+      reviewedAt: null,
+      createdAt: new Date("2026-11-01T00:00:00.000Z"),
+      sourceProjectCount: 0,
     });
 
     // 실제 예치 완료 서비스 (C-01/C-02 재사용)

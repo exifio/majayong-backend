@@ -20,6 +20,7 @@ import type { ReviewRepository } from "../modules/review/index.ts";
 import type { FileContractEntity, FileEntity, FileRepository } from "../modules/files/index.ts";
 import type {
   AdminBlock,
+  AdminBlockCondition,
   AdminCancellationContract,
   AdminEscalatedInspection,
   AdminHeldDeposit,
@@ -819,6 +820,57 @@ export function createPrismaRepositories(prisma: PrismaClient, options: PrismaSt
     };
   }
 
+  function mapAdminBlock(
+    row: {
+      id: string;
+      name: string;
+      unitPrice: number;
+      isActive: boolean;
+      mergedIntoId: string | null;
+      description: string;
+      functionSummary: string;
+      industryCode: string;
+      techTags: readonly string[];
+      conditions: Json;
+      priceBasis: string;
+      source: string;
+      reviewedAt: Date | null;
+      createdAt: Date;
+    },
+    sourceProjectCount: number,
+  ): AdminBlock {
+    const conditions: AdminBlockCondition[] = [];
+    if (Array.isArray(row.conditions)) {
+      for (const item of row.conditions) {
+        if (typeof item === "string") {
+          conditions.push({ key: "", text: item });
+          continue;
+        }
+        if (typeof item !== "object" || item === null || Array.isArray(item)) continue;
+        const record = item as Record<string, unknown>;
+        if (typeof record.text !== "string") continue;
+        conditions.push({ key: typeof record.key === "string" ? record.key : "", text: record.text });
+      }
+    }
+    return {
+      id: row.id,
+      title: row.name,
+      unitPrice: row.unitPrice,
+      isActive: row.isActive,
+      mergedIntoId: row.mergedIntoId,
+      description: row.description,
+      functionSummary: row.functionSummary,
+      industryCode: row.industryCode,
+      techTags: row.techTags,
+      conditions,
+      priceBasis: row.priceBasis,
+      source: row.source,
+      reviewedAt: row.reviewedAt,
+      createdAt: row.createdAt,
+      sourceProjectCount,
+    };
+  }
+
   const adminRepository: AdminRepository = {
     seedBlock(block) {
       throw new Error("PRISMA_SEED_NOT_SUPPORTED: use prisma seed data");
@@ -834,19 +886,23 @@ export function createPrismaRepositories(prisma: PrismaClient, options: PrismaSt
     },
     async listBlocks() {
       const rows = await prisma.blockCatalog.findMany();
-      return rows.map((row) => ({
-        id: row.id,
-        title: row.name,
-        unitPrice: row.unitPrice,
-        isActive: row.isActive,
-        mergedIntoId: row.mergedIntoId,
-      }));
+      const usages = await prisma.specItem.findMany({
+        select: { blockId: true, projectId: true },
+        distinct: ["blockId", "projectId"],
+      });
+      const counts = new Map<string, number>();
+      for (const usage of usages) counts.set(usage.blockId, (counts.get(usage.blockId) ?? 0) + 1);
+      return rows.map((row) => mapAdminBlock(row, counts.get(row.id) ?? 0));
     },
     async getBlock(id) {
       const row = await prisma.blockCatalog.findUnique({ where: { id } });
-      return row
-        ? { id: row.id, title: row.name, unitPrice: row.unitPrice, isActive: row.isActive, mergedIntoId: row.mergedIntoId }
-        : null;
+      if (row === null) return null;
+      const projects = await prisma.specItem.findMany({
+        where: { blockId: id },
+        select: { projectId: true },
+        distinct: ["projectId"],
+      });
+      return mapAdminBlock(row, projects.length);
     },
     async listHeldDeposits() {
       const rows = await prisma.escrowDeposit.findMany({ where: { status: "HELD" } });

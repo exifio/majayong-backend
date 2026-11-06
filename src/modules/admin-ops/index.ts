@@ -14,12 +14,28 @@ const ADMIN_BLOCK_ACTIONS: Record<string, true> = {
   ENABLE: true,
 };
 
+export interface AdminBlockCondition {
+  key: string;
+  text: string;
+}
+
 export interface AdminBlock {
   id: string;
   title: string;
   unitPrice: number;
   isActive: boolean;
   mergedIntoId?: string | null;
+  description: string;
+  functionSummary: string;
+  industryCode: string;
+  techTags: readonly string[];
+  conditions: readonly AdminBlockCondition[];
+  priceBasis: string;
+  source: string;
+  reviewedAt: Date | null;
+  createdAt: Date;
+  /** 이 블록을 명세에 포함한 프로젝트 수. */
+  sourceProjectCount: number;
 }
 
 export interface AdminHeldDeposit {
