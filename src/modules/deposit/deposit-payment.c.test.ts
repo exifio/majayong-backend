@@ -589,6 +589,29 @@ describe("C-01: Toss sandbox 예치·PG 검증·중복 방지", () => {
     );
   }
 
+  it("C-01-T08b 서명 없는 일반 결제 웹훅은 PG 재조회로 검증한 뒤 완료한다", async () => {
+    // 준비
+    const ctx = createLinkedContext();
+    const { deposit } = await openLinkedDeposit(ctx, "idem-c01-t08b");
+    const payload = {
+      orderId: deposit.id,
+      paymentKey: "pk-unsigned",
+      amount: 1_050_000,
+      status: "DONE",
+      eventType: "PAYMENT_STATUS_CHANGED",
+    };
+
+    // 실행: 토스 일반 결제 웹훅처럼 서명 없이 원문만 보낸다.
+    const result = await ctx.service.handleTossWebhook(
+      { rawPayload: Buffer.from(JSON.stringify(payload), "utf8") },
+      payload,
+    );
+
+    // 확인: PG 조회가 일치할 때만 완료된다.
+    assert.equal(result.status, "COMPLETED");
+    assert.equal(result.deposit.status, "COMPLETED");
+  });
+
   it("C-01-F01 만료·누락·PG 근거 불일치는 완료와 후속 정산을 만들지 않음", async () => {
     // 준비: 호출자와 다른 PG 근거를 돌려주는 어댑터, 예치 기한이 지난 문맥.
     const ctx = createLinkedContext({
