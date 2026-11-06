@@ -263,4 +263,34 @@ describe("INT-C-01: HTTP 라우트", () => {
       await app.close();
     }
   });
+
+  it("관리자 수동 배치 실행은 ADMIN만 호출하고 결과를 돌려준다", async () => {
+    // 준비
+    const app = await start(
+      services({
+        runDueJobs: async () => ({ success: true, actionsCount: 1, failures: [] }),
+      }),
+    );
+    try {
+      // 실행: 비관리자
+      const denied = await fetch(`${app.baseUrl}/admin/jobs/run`, {
+        method: "POST",
+        headers: { "x-user-id": "client-1", "x-role": "CLIENT" },
+      });
+      // 확인: 403
+      assert.equal(denied.status, 403);
+
+      // 실행: 관리자
+      const res = await fetch(`${app.baseUrl}/admin/jobs/run`, {
+        method: "POST",
+        headers: { "x-user-id": "admin-1", "x-role": "ADMIN" },
+      });
+      // 확인: 200과 배치 결과
+      assert.equal(res.status, 200);
+      const body = (await res.json()) as { data?: { actionsCount?: number } };
+      assert.equal(body.data?.actionsCount, 1);
+    } finally {
+      await app.close();
+    }
+  });
 });
