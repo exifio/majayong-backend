@@ -65,6 +65,7 @@
 | GET | `/contracts/{contractId}/cancellation` | 200 | `CancellationRecord` |
 | POST | `/contracts/{contractId}/cancellation/agree` | 200 | `CancellationRecord` |
 | POST | `/contracts/{contractId}/cancellation/object` | 200 | `CancellationRecord` |
+| POST | `/contracts/{contractId}/cancellation/withdraw` | 200 | `CancellationRecord`(요청자 본인, 판정 전 ACTIVE 복귀) |
 | POST | `/contracts/{contractId}/reviews` | 201 | `ReviewEntity` |
 | GET | `/contracts/{contractId}/reviews` | 200 | `PublicReviewDto[]` |
 | GET | `/profiles/suppliers/{supplierId}/reviews` | 200 | `PublicReviewDto[]` |

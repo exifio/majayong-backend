@@ -349,6 +349,42 @@ export class CancellationService {
     });
   }
 
+  async withdrawCancellation(
+    actor: { userId: string; role: string },
+    input: { contractId: string },
+  ): Promise<CancellationContractEntity> {
+    const contract = await this.repo.getContract(input.contractId);
+    if (!contract) throw new CancellationHttpError(404, "계약을 찾을 수 없습니다.");
+
+    const isParty = actor.userId === contract.clientUserId || actor.userId === contract.supplierUserId;
+    if (!isParty) throw new CancellationHttpError(403, "계약 당사자만 취소 요청을 철회할 수 있습니다.");
+    if (contract.status !== "CANCEL_REQUESTED") {
+      throw new CancellationHttpError(409, "취소 요청 상태의 계약이 아닙니다.");
+    }
+    if (contract.cancelResolvedAt) {
+      throw new CancellationHttpError(409, "이미 동의 또는 판정 완료된 취소 건입니다.");
+    }
+    if (contract.cancelEscalatedAt) {
+      throw new CancellationHttpError(409, "운영자 판정 대기 중에는 취소 요청을 철회할 수 없습니다.");
+    }
+    if (contract.cancelRequestedBy !== actor.userId) {
+      throw new CancellationHttpError(403, "취소를 요청한 본인만 철회할 수 있습니다.");
+    }
+
+    return this.repo.updateContract(contract.id, {
+      status: "ACTIVE",
+      cancelCause: null,
+      cancelRequestedBy: null,
+      cancelRequestedAt: null,
+      cancelNote: null,
+      cancelEvidence: null,
+      compensationRate: null,
+      objectionRate: null,
+      objectionNote: null,
+      cancelEscalatedAt: null,
+    });
+  }
+
   async checkCancellationDeadlines(
     contractId: string,
     now: Date,

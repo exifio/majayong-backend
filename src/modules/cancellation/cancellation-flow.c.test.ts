@@ -796,4 +796,61 @@ describe("C-06: 예치 후 계약 취소·이의·운영자 수동 처리", () =
     );
     assert.equal((await objected.repo.getContract(objected.contract.id))?.objectionRate, 70);
   });
+
+  it("C-06-T13 취소 요청자는 판정 전까지 요청을 철회해 ACTIVE로 되돌린다", async () => {
+    // 준비
+    const { service, contract, repo } = createTestSetup();
+    await service.requestCancellation(
+      { userId: contract.clientUserId, role: "CLIENT" },
+      { contractId: contract.id, cause: "CLIENT", note: "일정이 맞지 않습니다." },
+    );
+
+    // 실행
+    const withdrawn = await service.withdrawCancellation(
+      { userId: contract.clientUserId, role: "CLIENT" },
+      { contractId: contract.id },
+    );
+
+    // 확인
+    assert.equal(withdrawn.status, "ACTIVE");
+    assert.equal(withdrawn.cancelRequestedBy, null);
+    assert.equal(withdrawn.cancelCause, null);
+    assert.equal(withdrawn.cancelNote, null);
+    assert.equal((await repo.getContract(contract.id))?.status, "ACTIVE");
+  });
+
+  it("C-06-T14 요청자가 아니거나 판정 대기 중이면 철회를 거부한다", async () => {
+    // 준비: 의뢰인이 요청한 취소
+    const { service, contract } = createTestSetup();
+    await service.requestCancellation(
+      { userId: contract.clientUserId, role: "CLIENT" },
+      { contractId: contract.id, cause: "CLIENT", note: "취소" },
+    );
+
+    // 실행 및 확인: 상대방은 철회 불가
+    await assert.rejects(
+      () =>
+        service.withdrawCancellation(
+          { userId: contract.supplierUserId, role: "SUPPLIER" },
+          { contractId: contract.id },
+        ),
+      (err: unknown) => err instanceof CancellationHttpError && err.status === 403,
+    );
+
+    // 준비: 이의로 운영자 판정 대기 전환
+    await service.objectCancellation(
+      { userId: contract.supplierUserId, role: "SUPPLIER" },
+      { contractId: contract.id, objectionRate: 70, note: "이의" },
+    );
+
+    // 실행 및 확인: 요청자도 철회 불가
+    await assert.rejects(
+      () =>
+        service.withdrawCancellation(
+          { userId: contract.clientUserId, role: "CLIENT" },
+          { contractId: contract.id },
+        ),
+      (err: unknown) => err instanceof CancellationHttpError && err.status === 409,
+    );
+  });
 });

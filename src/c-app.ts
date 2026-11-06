@@ -180,6 +180,9 @@ const ROUTES: Route[] = [
       note: String(body.note ?? ""),
     }),
   })),
+  route("POST", "/contracts/:contractId/cancellation/withdraw", "user", async ({ actor, params }, s) => ({
+    body: await s.cancellations.withdrawCancellation(actor, { contractId: params.contractId }),
+  })),
   route("POST", "/contracts/:contractId/reviews", "user", async ({ actor, params, body }, s) => ({
     status: 201,
     body: await s.reviews.createReview(actor, {
