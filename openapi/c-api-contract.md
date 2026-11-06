@@ -69,7 +69,7 @@
 | GET | `/contracts/{contractId}/reviews` | 200 | `PublicReviewDto[]` |
 | GET | `/profiles/suppliers/{supplierId}/reviews` | 200 | `PublicReviewDto[]` |
 | GET | `/projects/{projectId}/client-reviews` | 200 | `PublicReviewDto[]` |
-| POST | `/uploads/presign` | 201 | 업로드 URL |
+| POST | `/uploads/presign` | 201 | 업로드 URL (`SUPPORT_INQUIRY`는 문의 생성 전 발급 가능) |
 | GET | `/uploads/{fileId}/download` | 200 | 다운로드 URL |
 | GET | `/admin/blocks` | 200 | `AdminBlockDetail[]`(설명·조건·단가 근거·태그·출처 프로젝트 수 포함) |
 | POST | `/admin/blocks/{blockId}/actions` | 200 | 블록 action 결과 |
@@ -92,6 +92,8 @@
 **자동 배치(D-32)**: `GET /internal/jobs/run`은 Vercel Cron이 15분마다 호출한다. `Authorization: Bearer {CRON_SECRET}`이 일치할 때만 due job을 실행하고, secret이 설정되지 않으면 503, 불일치는 401이다. 응답은 수동 라우트와 같은 `{success, actionsCount, failures}`다. Cron은 best-effort·중복 호출될 수 있으므로 배치는 상태 재확인으로 멱등하게 동작한다.
 
 **관리자 목록 DTO 확장(D-31)**: `GET /admin/reports`(B API)는 신고 기록에 `reporter`·`target`(id/role/displayName)와 `message`(body/createdAt/projectId/projectTitle)를 더한다. `GET /admin/blocks`와 `GET /admin/inspection-requests/escalated`는 위 표의 상세 필드를 더한다. 기존 필드는 유지하며 ADMIN 응답에만 적용한다.
+
+**문의 첨부(D-34)**: `POST /uploads/presign`은 `purpose=SUPPORT_INQUIRY`일 때 `inquiryId` 없이도 업로드 URL을 발급한다(파일은 uploader 소유·최대 10MB). 문의 생성 `POST /support/inquiries`의 `attachments`는 `{fileId,name,size}`를 받고, 서버가 같은 트랜잭션에서 해당 `file_attachments.inquiryId`를 연결한 뒤 응답에 `{fileId,url:/api/v1/uploads/{fileId}/download,name,size}`를 남긴다. 작성자와 ADMIN은 서명 다운로드 URL을 발급받을 수 있고, 최대 3개·개당 10MB를 넘으면 문의를 만들지 않는다.
 
 ## Webhook 예외
 
