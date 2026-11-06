@@ -83,10 +83,13 @@
 | POST | `/admin/installments/{installmentId}/release` | 200 | 수동 지급 결과(`PaymentInstallment`, 실제 이체 없음) |
 | GET | `/admin/event-logs` | 200 | `EventLogEntity[]` |
 | POST | `/admin/jobs/run` | 200 | `DueJobResult`(ADMIN 전용 수동 배치) |
+| GET | `/internal/jobs/run` | 200 | `DueJobResult`(Vercel Cron, `CRON_SECRET` Bearer 필요) |
 
 **수동 정산 지급(D-29)**: `POST /admin/installments/{installmentId}/release`는 ADMIN 전용이며 body `{reason}`이 필수다. 실제 이체/환불 없이 구간을 `RELEASED`로 기록하고 감사 로그(`SETTLEMENT_MANUAL_RELEASED`)를 남긴다. 공급자 정산 계좌가 인증(`payoutVerifiedAt`)되어야 하고, 최종 구간은 중간 구간이 먼저 `RELEASED`여야 한다. 이미 지급된 구간 재요청은 400이다.
 
 **수동 배치 실행(D-30)**: `POST /admin/jobs/run`은 ADMIN 전용이다. 누락 Toss 웹훅 복구를 포함한 due job을 한 번 실행하고 `{success, actionsCount, failures}`를 돌려준다. 상시 scheduler를 켜지 않은 staging에서 복구 경로를 검증하는 용도이며, 자동 실행을 뜻하지 않는다. 복구는 15분 주기·1분 window의 PENDING 예치만 조회한다.
+
+**자동 배치(D-32)**: `GET /internal/jobs/run`은 Vercel Cron이 15분마다 호출한다. `Authorization: Bearer {CRON_SECRET}`이 일치할 때만 due job을 실행하고, secret이 설정되지 않으면 503, 불일치는 401이다. 응답은 수동 라우트와 같은 `{success, actionsCount, failures}`다. Cron은 best-effort·중복 호출될 수 있으므로 배치는 상태 재확인으로 멱등하게 동작한다.
 
 **관리자 목록 DTO 확장(D-31)**: `GET /admin/reports`(B API)는 신고 기록에 `reporter`·`target`(id/role/displayName)와 `message`(body/createdAt/projectId/projectTitle)를 더한다. `GET /admin/blocks`와 `GET /admin/inspection-requests/escalated`는 위 표의 상세 필드를 더한다. 기존 필드는 유지하며 ADMIN 응답에만 적용한다.
 
