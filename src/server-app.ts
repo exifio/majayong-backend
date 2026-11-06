@@ -165,7 +165,7 @@ export function createServerApp(): ServerApp {
   };
   const { services: cServices, runner: jobRunner } = createIntegrationServices(integrationConfig);
   const cHandler = createHttpHandler(
-    { services: cServices, authenticate: async (req) => {
+    { services: { ...cServices, runDueJobs: (now: Date) => jobRunner.runOnce(now) }, authenticate: async (req) => {
       const header = req.headers.authorization;
       const value = typeof header === "string" ? header : undefined;
       const match = /^Bearer ([^\s]+)$/.exec(value ?? "");

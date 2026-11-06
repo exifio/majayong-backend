@@ -21,6 +21,8 @@ export interface AppServices {
   reviews: ReviewService;
   files: FileService;
   admin: AdminOpsService;
+  /** 복구 배치를 수동 실행한다. ADMIN 전용 라우트에서만 호출한다. */
+  runDueJobs?(now: Date): Promise<unknown>;
   /** `/projects/{projectId}/client-reviews`에서 projectId → 의뢰인 ID 조회. 통합 담당 주입. */
   projectClientId?(projectId: string): Promise<string | null>;
 }
@@ -273,6 +275,15 @@ const ROUTES: Route[] = [
       }),
     }),
   ),
+  route("POST", "/admin/jobs/run", "user", async ({ actor }, s) => {
+    if (actor.role !== "ADMIN") {
+      throw Object.assign(new Error("관리자 권한이 필요합니다."), { status: 403 });
+    }
+    if (!s.runDueJobs) {
+      throw Object.assign(new Error("배치 실행을 사용할 수 없습니다."), { status: 503 });
+    }
+    return { body: await s.runDueJobs(new Date()) };
+  }),
   route("GET", "/admin/event-logs", "user", async ({ actor, query }, s) => ({
     body: await s.admin.listEventLogs(actor, {
       actorUserId: query.get("actorUserId") ?? undefined,
