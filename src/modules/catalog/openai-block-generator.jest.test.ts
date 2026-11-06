@@ -55,6 +55,28 @@ describe("A-03 OpenAI 블록 생성기", () => {
     });
   });
 
+  it("블록의 사용자 표시 문구를 한국어로 생성하도록 요청한다", async () => {
+    // 준비
+    const fetcher = jest.fn<typeof fetch>().mockResolvedValue(response(JSON.stringify(generatedBlock)));
+    const create = catalog.createOpenAiCatalogBlockGenerator;
+    expect(typeof create).toBe("function");
+    if (typeof create !== "function") return;
+    const generator = create("test-secret-never-print", "gpt-5.4-mini", "1341", fetcher);
+    expect(generator).toBeDefined();
+    if (!generator) return;
+
+    // 실행
+    await generator({ industryCode: "RESTAURANT_RESERVATION", text: "예약 가능한 시간을 선택한다" });
+    const request = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body)) as Record<string, unknown>;
+
+    // 확인
+    expect(request).toMatchObject({
+      input: expect.arrayContaining([
+        expect.objectContaining({ role: "developer", content: expect.stringContaining("in Korean") }),
+      ]),
+    });
+  });
+
   it("공급자 오류를 거부하면서 응답 원문은 노출하지 않는다", async () => {
     // 준비
     const fetcher = jest.fn<typeof fetch>().mockResolvedValue(new Response("private provider error body", { status: 500 }));
@@ -97,6 +119,25 @@ describe("A-03 OpenAI 기능 추출기", () => {
       tokens: { input: 1000, output: 100 },
       costKrw: 2,
       latencyMs: expect.any(Number),
+    });
+  });
+
+  it("기능 목적을 한국어로 추출하도록 요청한다", async () => {
+    // 준비
+    const fetcher = jest.fn<typeof fetch>().mockResolvedValue(response(JSON.stringify({ features: ["예약 알림"] })));
+    const extractor = catalog.createOpenAiCatalogFeatureExtractor("test-secret-never-print", "gpt-5.4-mini", "1341", fetcher);
+    expect(extractor).toBeDefined();
+    if (!extractor) return;
+
+    // 실행
+    await extractor({ industryCode: "RESTAURANT_RESERVATION", text: "예약 서비스가 필요해요" });
+    const request = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body)) as Record<string, unknown>;
+
+    // 확인
+    expect(request).toMatchObject({
+      input: expect.arrayContaining([
+        expect.objectContaining({ role: "developer", content: expect.stringContaining("in Korean") }),
+      ]),
     });
   });
 
