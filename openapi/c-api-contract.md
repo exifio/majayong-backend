@@ -71,11 +71,11 @@
 | GET | `/projects/{projectId}/client-reviews` | 200 | `PublicReviewDto[]` |
 | POST | `/uploads/presign` | 201 | 업로드 URL |
 | GET | `/uploads/{fileId}/download` | 200 | 다운로드 URL |
-| GET | `/admin/blocks` | 200 | `AdminBlock[]` |
+| GET | `/admin/blocks` | 200 | `AdminBlockDetail[]`(설명·조건·단가 근거·태그·출처 프로젝트 수 포함) |
 | POST | `/admin/blocks/{blockId}/actions` | 200 | 블록 action 결과 |
 | GET | `/admin/deposits/held` | 200 | `AdminHeldDeposit[]` |
 | POST | `/admin/deposits/{depositId}/resolve` | 200 | 예치 판정 결과 |
-| GET | `/admin/inspection-requests/escalated` | 200 | `AdminEscalatedInspection[]` |
+| GET | `/admin/inspection-requests/escalated` | 200 | `AdminEscalatedInspectionDetail[]`(당사자·조건·주장·이력·납품 포함) |
 | POST | `/admin/inspection-requests/{inspectionRequestId}/decision` | 200 | 검수 판정 결과 |
 | GET | `/admin/contracts/cancellation-queue` | 200 | `AdminCancellationContract[]` |
 | POST | `/admin/contracts/{contractId}/cancellation/decide` | 200 | 취소 판정 결과 |
@@ -87,6 +87,8 @@
 **수동 정산 지급(D-29)**: `POST /admin/installments/{installmentId}/release`는 ADMIN 전용이며 body `{reason}`이 필수다. 실제 이체/환불 없이 구간을 `RELEASED`로 기록하고 감사 로그(`SETTLEMENT_MANUAL_RELEASED`)를 남긴다. 공급자 정산 계좌가 인증(`payoutVerifiedAt`)되어야 하고, 최종 구간은 중간 구간이 먼저 `RELEASED`여야 한다. 이미 지급된 구간 재요청은 400이다.
 
 **수동 배치 실행(D-30)**: `POST /admin/jobs/run`은 ADMIN 전용이다. 누락 Toss 웹훅 복구를 포함한 due job을 한 번 실행하고 `{success, actionsCount, failures}`를 돌려준다. 상시 scheduler를 켜지 않은 staging에서 복구 경로를 검증하는 용도이며, 자동 실행을 뜻하지 않는다. 복구는 15분 주기·1분 window의 PENDING 예치만 조회한다.
+
+**관리자 목록 DTO 확장(D-31)**: `GET /admin/reports`(B API)는 신고 기록에 `reporter`·`target`(id/role/displayName)와 `message`(body/createdAt/projectId/projectTitle)를 더한다. `GET /admin/blocks`와 `GET /admin/inspection-requests/escalated`는 위 표의 상세 필드를 더한다. 기존 필드는 유지하며 ADMIN 응답에만 적용한다.
 
 ## Webhook 예외
 
