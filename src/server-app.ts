@@ -29,6 +29,7 @@ import { breakExpiredContracts } from "./modules/contract/lifecycle.js";
 import { createPrismaContractUnitOfWork } from "./modules/contract/prisma-adapter.js";
 import type { ProjectPorts } from "./modules/project/ports.js";
 import {
+  createInspectionOpsPort,
   createProjectCandidateDb,
   createAProjectDb,
   createPrismaIntegrationDb,
@@ -156,6 +157,7 @@ export function createServerApp(): ServerApp {
         async createDownloadUrl() { return pending("Storage"); },
       },
       ...(tossVerifier === undefined ? {} : { tossVerifier }),
+      inspectionOps: createInspectionOpsPort(db),
       projectDeadlines: (at: Date) => runProjectDeadlineBatch(db, projectPorts, at),
       contractBreaks: (at: Date) => breakExpiredContracts(contractJobUow, { now: at }),
       catalogAdmin: {

@@ -115,8 +115,36 @@ function delegates(db: Db) {
   };
 }
 
-export function createPrismaPorts(prisma: PrismaClient): BPrismaPorts {
-  const run = <T>(work: (tx: unknown) => Promise<T>): Promise<T> =>
+/**
+ * 검수 이견의 판정·에스컬레이션을 계약 채팅의 시스템 메시지로 남긴다.
+ * `InspectionOpsPorts.recordEvent`는 admin-ops가 판정 감사 로그를 이미 남기므로 비워 둔다.
+ */
+export function createInspectionOpsPort(prisma: PrismaClient) {
+  return {
+    async createSystemMessage(input: {
+      contractId: string;
+      targetId: string;
+      type: string;
+      body: string;
+    }): Promise<void> {
+      const contract = await prisma.contract.findUnique({
+        where: { id: input.contractId },
+        select: { applicationId: true },
+      });
+      if (contract === null) return;
+      await prisma.applicationMessage.create({
+        data: {
+          applicationId: contract.applicationId,
+          senderId: null,
+          kind: "SYSTEM",
+          body: input.body,
+        },
+      });
+    },
+  };
+}
+
+export function createPrismaPorts(prisma: PrismaClient): BPrismaPorts {  const run = <T>(work: (tx: unknown) => Promise<T>): Promise<T> =>
     prisma.$transaction((tx) => work(tx));
   const base = delegates(prisma);
   const withTransaction = <Shape extends object>(shape: Shape) => ({
