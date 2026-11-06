@@ -12,6 +12,7 @@ import { createBRouters } from "./server.ts";
 import { createIntegrationPorts } from "./integration/external-ports.ts";
 import { createPrismaPorts } from "./integration/prisma-wiring.ts";
 import { createPrismaApplicationReadPort } from "./modules/application/prisma-adapter.ts";
+import { cleanupE2e } from "../tests/e2e-cleanup.ts";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (!databaseUrl || new URL(databaseUrl).pathname !== "/majayong_a00_test")
@@ -88,9 +89,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await db.project.deleteMany({ where: { id: { in: projectIds } } }).catch(() => undefined);
-  await db.draft.deleteMany({ where: { id: { in: draftIds } } }).catch(() => undefined);
-  await db.user.deleteMany({ where: { id: { in: userIds } } }).catch(() => undefined);
+  await cleanupE2e(db, { userIds, projectIds, draftIds });
   for (const server of servers) server.close();
   await db.$disconnect();
 });
@@ -103,6 +102,8 @@ describe("E2E-03 채팅과 합의", () => {
     const clientToken = issueAccessToken({ userId: clientId, role: Role.CLIENT, expiresAt: Date.now() + 60_000 }, tokenSecret);
     const supplierId = await makeSupplier();
     const supplierToken = issueAccessToken({ userId: supplierId, role: Role.SUPPLIER, expiresAt: Date.now() + 60_000 }, tokenSecret);
+    const outsiderId = await makeClient();
+    const outsiderToken = issueAccessToken({ userId: outsiderId, role: Role.CLIENT, expiresAt: Date.now() + 60_000 }, tokenSecret);
     const { baseUrl, close } = await startApp();
 
     // 실행: 기본 초안 생성
@@ -141,10 +142,21 @@ describe("E2E-03 채팅과 합의", () => {
     expect(submit.status).toBe(201);
     const applicationId = submit.body.data.id;
 
+    // 실행: 공급자가 채팅을 개설하려 한다
+    const supplierOpen = await req(baseUrl, "POST", `/api/v1/applications/${applicationId}/chat/open`, supplierToken, {});
+    // 확인: 공급자는 대화를 열 수 없다
+    expect(supplierOpen.status).toBe(403);
+    expect(supplierOpen.body.error.code).toBe("CLIENT_ONLY");
+
     // 실행: 의뢰인이 채팅을 개설한다
     const openChat = await req(baseUrl, "POST", `/api/v1/applications/${applicationId}/chat/open`, clientToken, {});
     // 확인: 채팅이 열린다
     expect(openChat.status).toBe(200);
+
+    // 실행 및 확인: 제3자는 대화 내용을 볼 수 없다
+    const outsiderMessages = await req(baseUrl, "GET", `/api/v1/applications/${applicationId}/messages`, outsiderToken);
+    expect(outsiderMessages.status).toBe(404);
+    expect(outsiderMessages.body.error.code).toBe("CHAT_NOT_FOUND");
 
     // 실행: 의뢰인과 공급자가 메시지를 주고받는다
     const clientMsg = await req(baseUrl, "POST", `/api/v1/applications/${applicationId}/messages`, clientToken, { body: "안녕하세요" });
@@ -154,9 +166,19 @@ describe("E2E-03 채팅과 합의", () => {
     // 확인: 공급자 메시지가 저장된다
     expect(supplierMsg.status).toBe(201);
 
+    // 실행: 참여자의 채팅 목록과 메시지
+    const rooms = await req(baseUrl, "GET", "/api/v1/me/chats", supplierToken);
+    const messages = await req(baseUrl, "GET", `/api/v1/applications/${applicationId}/messages`, supplierToken);
+    // 확인: 상대 표시 이름은 있지만 이메일 원문은 응답에 없다
+    expect(rooms.status).toBe(200);
+    expect(messages.status).toBe(200);
+    expect(rooms.body.data[0]?.counterpartDisplayName).toBeTruthy();
+    expect(JSON.stringify(rooms.body)).not.toContain("@example.invalid");
+    expect(JSON.stringify(messages.body)).not.toContain("@example.invalid");
+
     // 실행: 의뢰인의 계약 목록 조회
     const contracts = await req(baseUrl, "GET", "/api/v1/me/contracts", clientToken);
-    console.error("CONTRACTS", contracts.status, JSON.stringify(contracts.body));
+    expect(contracts.status).toBe(200);
     // 실행: 합의 미리보기 조회
     const preview = await req(baseUrl, "GET", `/api/v1/applications/${applicationId}/agreement-preview`, clientToken);
     // 확인: 미리보기가 반환된다
@@ -183,6 +205,11 @@ describe("E2E-03 채팅과 합의", () => {
       lastMessageAt: null,
     };
     await db.application.update({ where: { id: applicationId }, data: { agreementDraft } });
+
+    // 실행 및 확인: 공급자는 합의를 확정할 수 없다
+    const supplierConfirm = await req(baseUrl, "POST", `/api/v1/applications/${applicationId}/agreement/confirm`, supplierToken, {});
+    expect(supplierConfirm.status).toBe(403);
+    expect(supplierConfirm.body.error.code).toBe("CLIENT_ONLY");
 
     // 실행: 의뢰인이 합의를 확정한다
     const confirm = await req(baseUrl, "POST", `/api/v1/applications/${applicationId}/agreement/confirm`, clientToken, {});

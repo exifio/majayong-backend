@@ -12,6 +12,7 @@ import { createBRouters } from "./server.ts";
 import { createIntegrationPorts } from "./integration/external-ports.ts";
 import { createPrismaPorts } from "./integration/prisma-wiring.ts";
 import { createPrismaApplicationReadPort } from "./modules/application/prisma-adapter.ts";
+import { cleanupE2e } from "../tests/e2e-cleanup.ts";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (!databaseUrl || new URL(databaseUrl).pathname !== "/majayong_a00_test")
@@ -89,9 +90,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await db.project.deleteMany({ where: { id: { in: projectIds } } }).catch(() => undefined);
-  await db.draft.deleteMany({ where: { id: { in: draftIds } } }).catch(() => undefined);
-  await db.user.deleteMany({ where: { id: { in: userIds } } }).catch(() => undefined);
+  await cleanupE2e(db, { userIds, projectIds, draftIds });
   for (const server of servers) server.close();
   await db.$disconnect();
 });
@@ -104,6 +103,8 @@ describe("E2E-04 서명", () => {
     const clientToken = issueAccessToken({ userId: clientId, role: Role.CLIENT, expiresAt: Date.now() + 60_000 }, tokenSecret);
     const supplierId = await makeSupplier();
     const supplierToken = issueAccessToken({ userId: supplierId, role: Role.SUPPLIER, expiresAt: Date.now() + 60_000 }, tokenSecret);
+    const outsiderId = await makeSupplier();
+    const outsiderToken = issueAccessToken({ userId: outsiderId, role: Role.SUPPLIER, expiresAt: Date.now() + 60_000 }, tokenSecret);
     const { baseUrl, close } = await startApp();
 
     // 실행: 기본 초안 생성
@@ -178,6 +179,16 @@ describe("E2E-04 서명", () => {
     expect(confirm.status).toBe(201);
     const contractId = confirm.body.data.contract.id;
 
+    // 확인: 계약 항목 ID가 상세·문서 응답에 노출된다(FE-10 납품/검수 연결)
+    const contractDetail = await req(baseUrl, "GET", `/api/v1/contracts/${contractId}`, clientToken);
+    const contractDocument = await req(baseUrl, "GET", `/api/v1/contracts/${contractId}/document`, clientToken);
+    expect(contractDetail.status).toBe(200);
+    expect(contractDocument.status).toBe(200);
+    const itemIds = (contractDetail.body.data.items as Array<{ id: string }>).map((item) => item.id);
+    expect(itemIds.length).toBeGreaterThan(0);
+    expect(itemIds.every((id) => typeof id === "string" && id.length > 0)).toBe(true);
+    expect((contractDocument.body.data.items as Array<{ id: string }>).map((item) => item.id)).toEqual(itemIds);
+
     // 준비: 계약 내용 해시
     const contractRow = await db.contract.findUnique({ where: { id: contractId }, select: { contentHash: true } });
     const hash = contractRow?.contentHash;
@@ -187,6 +198,26 @@ describe("E2E-04 서명", () => {
     const clientSign = await req(baseUrl, "POST", `/api/v1/contracts/${contractId}/sign`, clientToken, { expectedContentHash: hash });
     // 확인: 의뢰인 서명이 접수된다
     expect(clientSign.status).toBe(200);
+
+    // 실행 및 확인: 계약 당사자가 아니면 서명할 수 없다
+    const outsiderSign = await req(baseUrl, "POST", `/api/v1/contracts/${contractId}/sign`, outsiderToken, { expectedContentHash: hash });
+    expect(outsiderSign.status).toBe(404);
+    expect(outsiderSign.body.error.code).toBe("CONTRACT_NOT_FOUND");
+
+    // 실행 및 확인: 내용 해시가 다르면 서명을 거부한다
+    const staleHash = await req(baseUrl, "POST", `/api/v1/contracts/${contractId}/sign`, supplierToken, { expectedContentHash: "stale-hash" });
+    expect(staleHash.status).toBe(409);
+    expect(staleHash.body.error.code).toBe("CONTRACT_HASH_MISMATCH");
+
+    // 실행 및 확인: 같은 당사자가 다시 서명할 수 없다
+    const duplicateSign = await req(baseUrl, "POST", `/api/v1/contracts/${contractId}/sign`, clientToken, { expectedContentHash: hash });
+    expect(duplicateSign.status).toBe(409);
+    expect(duplicateSign.body.error.code).toBe("ALREADY_SIGNED");
+
+    // 실행 및 확인: 의뢰인은 서명 거절 API를 쓸 수 없다
+    const clientDecline = await req(baseUrl, "POST", `/api/v1/contracts/${contractId}/decline`, clientToken, {});
+    expect(clientDecline.status).toBe(403);
+    expect(clientDecline.body.error.code).toBe("FORBIDDEN");
     // 실행: 공급자 서명
     const supplierSign = await req(baseUrl, "POST", `/api/v1/contracts/${contractId}/sign`, supplierToken, { expectedContentHash: hash });
     // 확인: 공급자 서명이 접수된다

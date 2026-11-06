@@ -221,12 +221,22 @@ function inquiryDb(rows: InquiryRow[]) {
     },
     contract: {
       async findFirst(input) {
-        const where = input.where as { id: string; OR: readonly Record<string, string>[] };
+        const where = input.where as {
+          id: string;
+          application?: {
+            OR?: readonly {
+              supplierId?: string;
+              project?: { draft?: { clientId?: string } };
+            }[];
+          };
+        };
         if (where.id !== 'contract-1') return null;
-        const party = where.OR.some(
-          (condition) => condition.clientUserId === 'client-1' || condition.supplierId === 'supplier-1',
+        const party = where.application?.OR?.some(
+          (condition) =>
+            condition.supplierId === 'supplier-1' ||
+            condition.project?.draft?.clientId === 'client-1',
         );
-        return party ? { id: 'contract-1' } : null;
+        return party === true ? { id: 'contract-1' } : null;
       },
     },
     eventLog: { create: unused },
@@ -264,6 +274,10 @@ describe('B-07 Prisma 문의 어댑터', () => {
     // 실행 및 확인
     assert.equal(
       await tx.canAccessContract({ contractId: 'contract-1', userId: 'supplier-1' }),
+      true,
+    );
+    assert.equal(
+      await tx.canAccessContract({ contractId: 'contract-1', userId: 'client-1' }),
       true,
     );
     assert.equal(
@@ -311,7 +325,7 @@ describe('B-07 Prisma 문의 어댑터', () => {
     // 실행 및 확인
     await tx.notifyAuthor({ userId: 'supplier-1', inquiryId: 'inq-1' });
     assert.equal(notifications[0]?.type, 'INQUIRY_ANSWERED');
-    assert.equal(notifications[0]?.targetUrl, '/help/inquiries/inq-1');
+    assert.equal(notifications[0]?.targetUrl, '/help/inquiry?tab=my&id=inq-1');
   });
 
   it('깨진 첨부 JSON은 거부한다', async () => {

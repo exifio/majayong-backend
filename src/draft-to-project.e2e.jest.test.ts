@@ -13,6 +13,7 @@ import { createBRouters } from "./server.ts";
 import { createIntegrationPorts } from "./integration/external-ports.ts";
 import { createPrismaPorts } from "./integration/prisma-wiring.ts";
 import { createPrismaApplicationReadPort } from "./modules/application/prisma-adapter.ts";
+import { cleanupE2e } from "../tests/e2e-cleanup.ts";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (!databaseUrl || new URL(databaseUrl).pathname !== "/majayong_a00_test")
@@ -81,9 +82,7 @@ async function requestJson(baseUrl: string, method: string, path: string, token:
 }
 
 afterAll(async () => {
-  await db.project.deleteMany({ where: { id: { in: projectIds } } }).catch(() => undefined);
-  await db.draft.deleteMany({ where: { id: { in: draftIds } } }).catch(() => undefined);
-  await db.user.deleteMany({ where: { id: { in: userIds } } }).catch(() => undefined);
+  await cleanupE2e(db, { userIds, projectIds, draftIds });
   for (const server of servers) server.close();
   await db.$disconnect();
 });

@@ -1670,8 +1670,9 @@ components:
         readOnly: { type: boolean, const: true }
     ContractItemDto:
       type: object
-      required: [blockId, title, description, origin, stage, sortOrder, conditions]
+      required: [id, blockId, title, description, origin, stage, sortOrder, conditions]
       properties:
+        id: { type: string }
         blockId: { type: string }
         title: { type: string }
         description: { type: string }

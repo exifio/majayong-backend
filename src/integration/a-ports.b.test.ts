@@ -84,6 +84,28 @@ describe('A가 호출하는 B 검색 Port', () => {
     // 확인
     assert.equal(received[0]?.filters?.recruitmentStatus, 'CLOSED');
   });
+
+  it('키워드와 정렬을 B 검색 입력으로 옮긴다', async () => {
+    // 준비
+    const received: ProjectSearchInput[] = [];
+    const search: ProjectSearchPort = {
+      async searchPublicProjects(input) {
+        received.push(input);
+        return { items: [], meta: { page: 1, pageSize: 10, total: 0, totalPages: 0 } };
+      },
+    };
+
+    // 실행
+    await createAProjectSearchPort(search).searchPublicProjects({
+      filters: { keyword: '예약' },
+      sort: 'DEADLINE_SOON',
+      page: 1,
+      pageSize: 10,
+    });
+
+    // 확인
+    assert.deepEqual(received[0], { filters: { keyword: '예약' }, sort: 'DEADLINE_SOON', page: 1 });
+  });
 });
 
 function applicationRow(overrides: Partial<ApplicationRow> = {}): ApplicationRow {

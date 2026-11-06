@@ -1,5 +1,9 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+import { verifyTossWebhookSignature } from "../../integration/toss-webhook-signature.ts";
 import { endOfKstDayPlus, requireDepositContractTerms, splitInstallments } from "../settlement/policy.ts";
+
+// ponytail: age buckets avoid persistent poll state; missed ticks retry next bucket (15m).
+const TOSS_RECONCILIATION_INTERVAL_MS = 15 * 60 * 1000;
+const TOSS_RECONCILIATION_WINDOW_MS = 60 * 1000;
 
 export type DepositStatus = "PENDING" | "HELD" | "COMPLETED" | "FAILED";
 
@@ -143,8 +147,15 @@ export interface DepositRepository {
   deleteInstallments(contractId: string, tx?: DepositTransaction): Promise<void>;
 }
 
+export type TossOrderLookup =
+  | { found: false; retryable?: boolean }
+  | { found: true; orderId: unknown; paymentKey: unknown; amount: unknown; status: unknown };
+
 export interface TossVerifyAdapter {
   verifyPayment?(orderId: string, paymentKey: string, amount: number): Promise<unknown>;
+  /** Toss 결제 승인(POST /v1/payments/confirm). 없으면 승인 확정에 쓸 수 없다. */
+  confirmPayment?(orderId: string, paymentKey: string, amount: number): Promise<unknown>;
+  findPaymentByOrderId?(orderId: string): Promise<TossOrderLookup>;
 }
 
 export interface DepositCompletionPort {
@@ -159,16 +170,46 @@ export interface DepositCompletionPort {
   }>;
 }
 
-function webhookSecretMatches(provided: unknown, expected: string): boolean {
-  if (typeof provided !== "string" || expected.length === 0) return false;
-  const providedDigest = createHash("sha256").update(provided, "utf8").digest();
-  const expectedDigest = createHash("sha256").update(expected, "utf8").digest();
-  return timingSafeEqual(providedDigest, expectedDigest);
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/**
+ * Toss 원형 PAYMENT_STATUS_CHANGED와 기존 내부 평면 payload를 각각 검증해 같은 형식으로 바꾼다.
+ * HTTP 경계에서 원문 HMAC 서명 확인을 끝낸 뒤 호출한다.
+ */
 function parseTossWebhookPayload(value: unknown): TossWebhookPayload | null {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
-  const candidate = value as Record<string, unknown>;
+  if (!isPlainRecord(value)) return null;
+  if ("data" in value) return parseRawPaymentStatusChanged(value);
+  return parseFlatWebhookPayload(value);
+}
+
+function parseRawPaymentStatusChanged(candidate: Record<string, unknown>): TossWebhookPayload | null {
+  if (candidate.eventType !== "PAYMENT_STATUS_CHANGED") return null;
+  const data = candidate.data;
+  if (!isPlainRecord(data)) return null;
+  const { orderId, paymentKey, totalAmount, status, transactionKey } = data;
+  if (
+    typeof orderId !== "string" || orderId.trim().length === 0 ||
+    typeof paymentKey !== "string" || paymentKey.trim().length === 0 ||
+    typeof totalAmount !== "number" || !Number.isSafeInteger(totalAmount) || totalAmount <= 0 ||
+    typeof status !== "string" || status.trim().length === 0 ||
+    (transactionKey !== undefined && (typeof transactionKey !== "string" || transactionKey.trim().length === 0))
+  ) {
+    return null;
+  }
+  return {
+    orderId,
+    paymentKey,
+    amount: totalAmount,
+    status,
+    eventType: candidate.eventType,
+    ...(transactionKey === undefined ? {} : { transactionKey }),
+  };
+}
+
+function parseFlatWebhookPayload(candidate: Record<string, unknown>): TossWebhookPayload | null {
   const { orderId, paymentKey, amount, status, eventType, transactionKey } = candidate;
   if (
     typeof orderId !== "string" || orderId.trim().length === 0 ||
@@ -451,24 +492,200 @@ export class DepositService {
     return this.repo.findByContractId(contractId);
   }
 
-  async handleTossWebhook(
-    auth: { serverSecret?: string; bearerToken?: string; isPublicUserToken?: boolean },
-    rawPayload: unknown,
-  ): Promise<{ status: DepositStatus; deposit: EscrowDeposit; isDuplicate?: boolean; reason?: string }> {
-    if (auth.isPublicUserToken) {
-      throw new DepositHttpError(403, "서버 전용 웹훅 엔드포인트입니다. 공개 사용자 토큰으로 호출할 수 없습니다.", "WEBHOOK_FORBIDDEN");
+  /**
+   * Toss SDK 성공 리다이렉트 뒤 서버 승인. 결제창의 쿼리는 신뢰하지 않고
+   * 저장된 예치 금액과 PG 승인 응답만으로 COMPLETED/DEPOSITED를 확정한다.
+   * ponytail: withDepositLock은 단일 프로세스 보호다. 다중 인스턴스는 DB 조건부 갱신/unique가 필요하다.
+   */
+  async confirmDeposit(
+    actor: { userId: string; role: string },
+    input: { contractId: string; depositId: string; paymentKey: string; amount: number },
+  ): Promise<{
+    deposit: EscrowDeposit;
+    contract: DepositContractInfo;
+    installments: PaymentInstallment[];
+  }> {
+    if (input.paymentKey.trim().length === 0) {
+      throw new DepositHttpError(400, "paymentKey가 필요합니다.", "INVALID_REQUEST");
+    }
+    if (!Number.isSafeInteger(input.amount) || input.amount <= 0) {
+      throw new DepositHttpError(400, "결제 금액이 올바르지 않습니다.", "INVALID_REQUEST");
+    }
+    const contract = await this.contractsPort.getContract(input.contractId);
+    if (!contract) {
+      throw new DepositHttpError(404, "계약을 찾을 수 없습니다.", "CONTRACT_NOT_FOUND");
+    }
+    if (actor.role !== "CLIENT" || actor.userId !== contract.clientUserId) {
+      throw new DepositHttpError(403, "의뢰인 본인만 결제를 승인할 수 있습니다.", "CLIENT_ONLY");
     }
 
-    if (!webhookSecretMatches(auth.serverSecret, this.webhookSecret)) {
-      throw new DepositHttpError(401, "웹훅 인증 실패: 위조되었거나 유효하지 않은 비밀키입니다.", "WEBHOOK_AUTH_FAILED");
+    const deposit = await this.repo.findById(input.depositId);
+    if (!deposit || deposit.contractId !== contract.id) {
+      throw new DepositHttpError(404, "예치 건을 찾을 수 없습니다.", "DEPOSIT_NOT_FOUND");
+    }
+    if (deposit.amount !== input.amount) {
+      throw new DepositHttpError(400, "결제 금액이 예치 요청과 일치하지 않습니다.", "AMOUNT_MISMATCH");
+    }
+    if (deposit.status === "COMPLETED") {
+      if (deposit.pgKey !== null && deposit.pgKey !== input.paymentKey) {
+        throw new DepositHttpError(409, "이미 다른 결제로 완료된 예치입니다.", "DEPOSIT_ALREADY_COMPLETED");
+      }
+      const installments = await this.repo.listInstallments(contract.id);
+      return { deposit, contract, installments };
+    }
+    if (deposit.status !== "PENDING") {
+      throw new DepositHttpError(409, "대기(PENDING) 예치만 사용자 승인할 수 있습니다.", "DEPOSIT_NOT_CONFIRMABLE");
+    }
+    if (contract.depositDeadline && this.clock.now() > contract.depositDeadline) {
+      throw new DepositHttpError(409, "예치 기한이 지났습니다.", "DEPOSIT_DEADLINE_EXPIRED");
+    }
+    if (contract.status !== "ACTIVE" || contract.paymentStatus !== "PENDING") {
+      throw new DepositHttpError(409, "예치 가능한 계약 상태가 아닙니다.", "CONTRACT_NOT_DEPOSITABLE");
+    }
+    if (!this.tossAdapter?.confirmPayment && !this.tossAdapter?.verifyPayment) {
+      throw new DepositHttpError(503, "PG 승인을 사용할 수 없습니다.", "PG_UNAVAILABLE");
+    }
+
+    return this.withDepositLock(deposit.id, async () => {
+      const current = (await this.repo.findById(deposit.id)) ?? deposit;
+      if (current.status === "COMPLETED") {
+        const installments = await this.repo.listInstallments(contract.id);
+        return {
+          deposit: current,
+          contract: (await this.contractsPort.getContract(contract.id)) ?? contract,
+          installments,
+        };
+      }
+      if (current.status !== "PENDING") {
+        throw new DepositHttpError(409, "대기(PENDING) 예치만 사용자 승인할 수 있습니다.", "DEPOSIT_NOT_CONFIRMABLE");
+      }
+
+      const payload: TossWebhookPayload = {
+        orderId: current.id,
+        paymentKey: input.paymentKey,
+        amount: current.amount,
+        status: "DONE",
+      };
+
+      let evidence: unknown;
+      if (this.tossAdapter?.confirmPayment) {
+        try {
+          evidence = await this.tossAdapter.confirmPayment(current.id, input.paymentKey, current.amount);
+        } catch {
+          evidence = { verified: false };
+        }
+      }
+      // 승인 호출이 '이미 처리됨'으로 실패할 수 있으므로 GET 재조회로 한 번 더 확인한다.
+      if (pgEvidenceRejects(evidence, payload) && this.tossAdapter?.verifyPayment) {
+        try {
+          evidence = await this.tossAdapter.verifyPayment(current.id, input.paymentKey, current.amount);
+        } catch {
+          evidence = { verified: false };
+        }
+      }
+      if (pgEvidenceRejects(evidence, payload)) {
+        if (isPlainRecord(evidence) && evidence.retryable === true) {
+          throw new DepositHttpError(503, "PG 결제 승인을 일시적으로 확인할 수 없습니다.", "PG_UNAVAILABLE");
+        }
+        throw new DepositHttpError(422, "PG 결제 승인을 확인할 수 없습니다.", "PAYMENT_VERIFICATION_FAILED");
+      }
+
+      return this.completionPort.completeDeposit({
+        depositId: current.id,
+        pgKey: input.paymentKey,
+        paymentEvent: { dedupKey: `confirm:${input.paymentKey}`, payload },
+      });
+    });
+  }
+
+  async handleTossWebhook(
+    auth: { signature?: string; transmissionTime?: string; rawPayload?: Uint8Array },
+    rawPayload: unknown,
+  ): Promise<{ status: DepositStatus; deposit: EscrowDeposit; isDuplicate?: boolean; reason?: string }> {
+    if (!verifyTossWebhookSignature({
+      securityKey: this.webhookSecret,
+      rawPayload: auth.rawPayload,
+      transmissionTime: auth.transmissionTime,
+      signature: auth.signature,
+    })) {
+      throw new DepositHttpError(401, "웹훅 서명 검증에 실패했습니다.", "WEBHOOK_AUTH_FAILED");
     }
     const payload = parseTossWebhookPayload(rawPayload);
     if (!payload) throw new DepositHttpError(400, "웹훅 본문이 올바르지 않습니다.", "INVALID_WEBHOOK_PAYLOAD");
+    return this.processTossPayment(payload.orderId, payload);
+  }
 
-    return this.withDepositLock(payload.orderId, async () => {
-      const deposit = await this.repo.findById(payload.orderId);
+  async reconcilePendingPayment(depositId: string, now: Date): Promise<{ completed: boolean }> {
+    if (!this.tossAdapter?.findPaymentByOrderId) return { completed: false };
+    const deposit = await this.repo.findById(depositId);
+    if (!deposit || deposit.status !== "PENDING") return { completed: false };
+
+    const elapsedMs = now.getTime() - deposit.createdAt.getTime();
+    if (
+      elapsedMs < TOSS_RECONCILIATION_INTERVAL_MS ||
+      elapsedMs % TOSS_RECONCILIATION_INTERVAL_MS >= TOSS_RECONCILIATION_WINDOW_MS
+    ) {
+      return { completed: false };
+    }
+    const contract = await this.contractsPort.getContract(deposit.contractId);
+    if (
+      !contract ||
+      contract.status !== "ACTIVE" ||
+      contract.paymentStatus !== "PENDING" ||
+      (contract.depositDeadline !== null && now.getTime() > contract.depositDeadline.getTime())
+    ) {
+      return { completed: false };
+    }
+
+    const lookup = await this.tossAdapter.findPaymentByOrderId(deposit.id);
+    if (!lookup.found) {
+      if (lookup.retryable === true) {
+        throw new DepositHttpError(503, "PG 주문 재조회를 일시적으로 확인할 수 없습니다.", "PG_UNAVAILABLE");
+      }
+      return { completed: false };
+    }
+    if (lookup.status !== "DONE") return { completed: false };
+    if (
+      typeof lookup.orderId !== "string" ||
+      typeof lookup.paymentKey !== "string" ||
+      lookup.paymentKey.trim().length === 0 ||
+      typeof lookup.amount !== "number" ||
+      !Number.isSafeInteger(lookup.amount) ||
+      lookup.amount <= 0
+    ) {
+      throw new DepositHttpError(503, "PG 주문 조회 응답을 확인할 수 없습니다.", "PG_UNAVAILABLE");
+    }
+
+    const payload: TossWebhookPayload = {
+      orderId: lookup.orderId,
+      paymentKey: lookup.paymentKey,
+      amount: lookup.amount,
+      status: lookup.status,
+    };
+    const evidence = {
+      verified:
+        lookup.orderId === deposit.id &&
+        lookup.amount === deposit.amount &&
+        lookup.status === "DONE",
+      orderId: lookup.orderId,
+      paymentKey: lookup.paymentKey,
+      amount: lookup.amount,
+      status: lookup.status,
+    };
+    const result = await this.processTossPayment(deposit.id, payload, evidence, now);
+    return { completed: result.status === "COMPLETED" && result.isDuplicate !== true };
+  }
+
+  private async processTossPayment(
+    depositId: string,
+    payload: TossWebhookPayload,
+    initialEvidence?: unknown,
+    now: Date = this.clock.now(),
+  ): Promise<{ status: DepositStatus; deposit: EscrowDeposit; isDuplicate?: boolean; reason?: string }> {
+    return this.withDepositLock(depositId, async () => {
+      const deposit = await this.repo.findById(depositId);
       if (!deposit) {
-        throw new DepositHttpError(404, `orderId에 해당하는 예치 건을 찾을 수 없습니다: ${payload.orderId}`);
+        throw new DepositHttpError(404, `orderId에 해당하는 예치 건을 찾을 수 없습니다: ${depositId}`);
       }
       if (deposit.status === "COMPLETED") {
         return { status: "COMPLETED" as const, deposit, isDuplicate: true };
@@ -482,7 +699,7 @@ export class DepositService {
           eventType: "DUPLICATE_BLOCKED",
           dedupKey: `${dedupKey}-dup-${Date.now()}`,
           payload,
-          resultNote: "중복 콜백 수신 차단",
+          resultNote: "중복 결제 이벤트 수신 차단",
         });
         const current = (await this.repo.findById(deposit.id)) ?? deposit;
         return { status: current.status, deposit: current, isDuplicate: true };
@@ -490,11 +707,14 @@ export class DepositService {
       if (deposit.status === "HELD") {
         return { status: "HELD" as const, deposit, reason: deposit.heldReason ?? "HELD" };
       }
+      if (payload.orderId !== deposit.id) {
+        return this.holdDeposit(deposit, dedupKey, payload, "ORDER_MISMATCH", "PG 주문번호 불일치");
+      }
 
       const contract = await this.contractsPort.getContract(deposit.contractId);
       if (!contract) throw new DepositHttpError(404, "계약을 찾을 수 없습니다.", "CONTRACT_NOT_FOUND");
-      if (contract.depositDeadline !== null && this.clock.now().getTime() > contract.depositDeadline.getTime()) {
-        return this.holdDeposit(deposit, dedupKey, payload, "DEPOSIT_EXPIRED", "예치 기한이 지난 콜백");
+      if (contract.depositDeadline !== null && now.getTime() > contract.depositDeadline.getTime()) {
+        return this.holdDeposit(deposit, dedupKey, payload, "DEPOSIT_EXPIRED", "예치 기한이 지난 결제");
       }
       if (contract.status !== "ACTIVE" || contract.paymentStatus !== "PENDING") {
         return this.holdDeposit(deposit, dedupKey, payload, "CONTRACT_NOT_DEPOSITABLE", "예치 가능한 계약 상태가 아님");
@@ -519,17 +739,21 @@ export class DepositService {
           "CALLBACK_RECEIVED",
         );
       }
-      if (!this.tossAdapter?.verifyPayment) {
-        return this.holdDeposit(deposit, dedupKey, payload, "VERIFY_UNAVAILABLE", "PG 재조회 없음");
-      }
-
-      let evidence: unknown;
-      try {
-        evidence = await this.tossAdapter.verifyPayment(payload.orderId, payload.paymentKey, payload.amount);
-      } catch {
-        evidence = { verified: false };
+      let evidence = initialEvidence;
+      if (evidence === undefined) {
+        if (!this.tossAdapter?.verifyPayment) {
+          throw new DepositHttpError(503, "PG 결제 조회를 사용할 수 없습니다.", "PG_VERIFICATION_UNAVAILABLE");
+        }
+        try {
+          evidence = await this.tossAdapter.verifyPayment(payload.orderId, payload.paymentKey, payload.amount);
+        } catch {
+          evidence = { verified: false, retryable: true };
+        }
       }
       if (pgEvidenceRejects(evidence, payload)) {
+        if (isPlainRecord(evidence) && evidence.retryable === true) {
+          throw new DepositHttpError(503, "PG 결제 조회를 일시적으로 확인할 수 없습니다.", "PG_VERIFICATION_UNAVAILABLE");
+        }
         return this.holdDeposit(deposit, dedupKey, payload, "VERIFY_FAILED", "PG 재조회 검증 실패");
       }
 
@@ -924,6 +1148,7 @@ export interface DueJobTargets {
   cancellationContractIds?(now: Date): Promise<readonly string[]>;
   deliveryIds?(now: Date): Promise<readonly string[]>;
   notificationContractIds?(now: Date): Promise<readonly string[]>;
+  pendingDepositIds?(createdBefore: Date): Promise<readonly string[]>;
 }
 
 export interface DueJobFailure {
@@ -933,7 +1158,8 @@ export interface DueJobFailure {
     | "DEPOSIT_DEADLINE"
     | "CANCELLATION_DEADLINE"
     | "AUTO_APPROVAL"
-    | "DUE_NOTIFICATION";
+    | "DUE_NOTIFICATION"
+    | "TOSS_PAYMENT_RECONCILIATION";
   targetId: string;
   attempts: number;
   error: string;
@@ -960,6 +1186,10 @@ export interface DueJobsContext {
   completionService?: {
     expireDepositIfDue(contractId: string, now: Date): Promise<{ expired: boolean }>;
   };
+  paymentRecoveryService?: {
+    reconcilePendingPayment(depositId: string, now: Date): Promise<{ completed: boolean }>;
+  };
+  pendingDepositIds?: readonly string[];
   depositContractIds?: readonly string[];
   cancellationContractIds?: readonly string[];
   deliveryIds?: readonly string[];
@@ -1019,6 +1249,27 @@ export async function runDueJobs(context: DueJobsContext, now: Date): Promise<Du
     context.notificationContractIds ??
     (await context.targets?.notificationContractIds?.(now)) ??
     [];
+  const pendingDepositIds =
+    context.pendingDepositIds ??
+    (context.paymentRecoveryService
+      ? (await context.targets?.pendingDepositIds?.(
+          new Date(now.getTime() - TOSS_RECONCILIATION_INTERVAL_MS),
+        )) ?? []
+      : []);
+
+  if (context.paymentRecoveryService) {
+    // ponytail: sequential lookups avoid a Toss API burst; add bounded concurrency if batch volume grows.
+    for (const depositId of pendingDepositIds) {
+      const result = await withRetry(
+        "TOSS_PAYMENT_RECONCILIATION",
+        depositId,
+        () => context.paymentRecoveryService!.reconcilePendingPayment(depositId, now),
+        retries,
+        failures,
+      );
+      if (result?.completed) actionsCount += 1;
+    }
+  }
 
   if (context.completionService) {
     for (const contractId of depositIds) {

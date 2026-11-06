@@ -219,7 +219,8 @@ function normalizePayload(
   return { ...payload };
 }
 
-function targetUrlFor(type: NotificationType, targetId: string): string {
+/** 타입별 고정 경로. support 어댑터처럼 알림을 직접 쓰는 곳도 같은 URL을 쓰도록 공개한다. */
+export function notificationTargetUrl(type: NotificationType, targetId: string): string {
   switch (type) {
     case 'APPLICATION_RECEIVED':
       return `/projects/${targetId}/applications`;
@@ -247,7 +248,7 @@ function targetUrlFor(type: NotificationType, targetId: string): string {
     case 'REPORT_REVIEWED':
       return `/reports/${targetId}`;
     case 'INQUIRY_ANSWERED':
-      return `/help/inquiries/${targetId}`;
+      return `/help/inquiry?tab=my&id=${targetId}`;
   }
 }
 
@@ -349,7 +350,7 @@ async function deliver(
     return await tx.create({
       userId: input.userId,
       type: input.type,
-      targetUrl: targetUrlFor(input.type, input.targetId),
+      targetUrl: notificationTargetUrl(input.type, input.targetId),
       targetId: input.targetId,
       payload: input.payload,
       createdAt: input.now,
@@ -393,7 +394,7 @@ export async function createNotificationOnceInTransaction(
     await tx.create({
       userId,
       type: input.type,
-      targetUrl: targetUrlFor(input.type, targetId),
+      targetUrl: notificationTargetUrl(input.type, targetId),
       targetId,
       payload,
       createdAt: input.now,

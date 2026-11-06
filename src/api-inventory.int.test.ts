@@ -20,8 +20,11 @@ const ROUTE_FILES = [
   "src/modules/support/http.ts",
 ];
 
-// 원본 118 인벤토리 밖에서 승인된 추가(D-11 파일 다운로드).
-const APPROVED_ADDITIONS = new Set(["GET /uploads/:param/download"]);
+// 원본 118 인벤토리 밖에서 승인된 추가(D-11 파일 다운로드, D-25 Toss 예치 승인).
+const APPROVED_ADDITIONS = new Set([
+  "GET /uploads/:param/download",
+  "POST /contracts/:param/deposits/:param/confirm",
+]);
 
 const normalize = (operation: string): string => {
   const [method] = operation.split(" ");
@@ -30,7 +33,7 @@ const normalize = (operation: string): string => {
 };
 
 function documentOperations(): string[] {
-  const source = readFileSync("docs/API_INDEX.md", "utf8");
+  const source = readFileSync("openapi/API_INDEX.md", "utf8");
   return [...source.matchAll(/^\|\s*\d{3}\s*\|[^|]*\|[^|]*\|\s*`([A-Z]+)`\s*\|\s*`([^`]+)`\s*\|$/gm)]
     .map((match) => `${match[1]} ${match[2]}`);
 }
@@ -67,13 +70,16 @@ describe("API 인벤토리: 118 operation 단일 mount", () => {
     assert.deepEqual([...new Set(duplicates)], []);
   });
 
-  it("원본 118 operation이 모두 실제 라우트로 존재하고, 추가는 승인된 1건뿐이다", () => {
+  it("원본 118 operation이 모두 실제 라우트로 존재하고, 추가는 승인된 2건뿐이다", () => {
     // 준비
     const document = new Set(documentOperations().map(normalize));
     const code = new Set(codeOperations().map(normalize));
 
     // 확인
     assert.deepEqual([...document].filter((operation) => !code.has(operation)), []);
-    assert.deepEqual([...code].filter((operation) => !document.has(operation)), [...APPROVED_ADDITIONS]);
+    assert.deepEqual(
+      [...code].filter((operation) => !document.has(operation)).sort(),
+      [...APPROVED_ADDITIONS].sort(),
+    );
   });
 });

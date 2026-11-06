@@ -11,6 +11,7 @@ import type {
   InquiryTx,
   InquiryUnitOfWork,
 } from './inquiries.js';
+import { notificationTargetUrl } from '../notification/notifications.js';
 
 export interface InquiryRow {
   readonly id: string;
@@ -110,7 +111,12 @@ export function createInquiryTx(db: InquiryDbClient, now: () => Date): InquiryTx
       const contract = await db.contract.findFirst({
         where: {
           id: input.contractId,
-          OR: [{ clientUserId: input.userId }, { supplierId: input.userId }],
+          application: {
+            OR: [
+              { supplierId: input.userId },
+              { project: { draft: { clientId: input.userId } } },
+            ],
+          },
         },
         select: { id: true },
       });
@@ -178,7 +184,7 @@ export function createInquiryTx(db: InquiryDbClient, now: () => Date): InquiryTx
           data: {
             userId: input.userId,
             type: 'INQUIRY_ANSWERED',
-            targetUrl: `/help/inquiries/${input.inquiryId}`,
+            targetUrl: notificationTargetUrl('INQUIRY_ANSWERED', input.inquiryId),
             targetId: input.inquiryId,
             payload: null,
             createdAt: now(),

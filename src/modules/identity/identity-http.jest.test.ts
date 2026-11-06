@@ -3,6 +3,7 @@ import { createServer, type Server } from "node:http";
 import { randomUUID } from "node:crypto";
 import { PrismaClient, Role } from "@prisma/client";
 import { createApp } from "../../app.ts";
+import { issuePasswordResetToken } from "./auth.ts";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (!databaseUrl || new URL(databaseUrl).pathname !== "/majayong_a00_test")
@@ -171,6 +172,46 @@ describe("A-01 HTTP 인증 API", () => {
       // 실행 및 확인
       const login = await json(baseUrl, "/auth/login", { email: user.email, password: "Anotherpass123" });
       expect(login.status).toBe(200);
+    });
+  });
+
+  it("공급자 계정을 만들고 만료된 재설정 토큰을 거부한다", async () => {
+    await withServer({ db: prisma, tokenSecret: secret, now: () => now }, async baseUrl => {
+      // 준비
+      const email = `a01-supplier-${randomUUID()}@example.invalid`;
+      createdEmails.add(email);
+
+      // 실행 및 확인
+      const registered = await json(baseUrl, "/auth/register", {
+        email,
+        password: "Validpass123",
+        role: Role.SUPPLIER,
+        termsVersion: "terms-2026-01",
+      });
+      expect(registered.status).toBe(201);
+      const account = (await registered.json() as { data: { user: { id: string; role: Role } } }).data;
+      createdIds.add(account.user.id);
+      // 확인
+      expect(account.user.role).toBe(Role.SUPPLIER);
+
+      // 실행 및 확인
+      const login = await json(baseUrl, "/auth/login", { email, password: "Validpass123" });
+      expect(login.status).toBe(200);
+      // 확인
+      expect((await login.json() as { data: { user: { role: Role } } }).data.user.role).toBe(Role.SUPPLIER);
+
+      // 실행 및 확인
+      const user = await prisma.user.findUniqueOrThrow({ where: { id: account.user.id } });
+      const expiredToken = issuePasswordResetToken(
+        user.id,
+        user.passwordHash ?? "",
+        secret,
+        now.getTime() - 31 * 60 * 1000,
+      );
+      const rejected = await json(baseUrl, "/auth/password-reset/confirm", { token: expiredToken, newPassword: "Anotherpass123" });
+      expect(rejected.status).toBe(401);
+      // 확인
+      expect((await rejected.json() as { error: { code: string } }).error.code).toBe("RESET_TOKEN_INVALID");
     });
   });
 

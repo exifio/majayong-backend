@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, it } from "node:test";
@@ -25,7 +25,7 @@ import { createPrismaNotificationTx } from "./modules/notification/prisma-adapte
 // G2-03: C HTTP 웹훅 → 예치 확정 → B 자동 거절·알림이 한 PostgreSQL 트랜잭션인지 확인한다.
 // DATABASE_URL이 없으면 skip한다(전용 테스트 DB에서만 실행, 실제/공유 DB 금지).
 const hasDatabase = Boolean(testDatabaseUrl());
-const WEBHOOK_SECRET = "g203-webhook-secret";
+const WEBHOOK_SECRET = "0123456789abcdef".repeat(4);
 const NOW = new Date("2026-11-04T05:20:00.000Z");
 const servers: Server[] = [];
 
@@ -190,6 +190,13 @@ async function start(
               ? { verified: true, orderId, paymentKey, amount, status: "DONE" }
               : result;
           },
+          async confirmPayment(orderId, paymentKey, amount) {
+            if (options.verify === undefined) return { verified: true, orderId, paymentKey, amount, status: "DONE" };
+            const result = options.verify({ orderId, paymentKey, amount });
+            return result === undefined
+              ? { verified: true, orderId, paymentKey, amount, status: "DONE" }
+              : result;
+          },
         },
       },
     },
@@ -217,18 +224,40 @@ async function start(
   };
 }
 
-async function post(
+async function postRaw(
   url: string,
-  body: unknown,
+  rawBody: string,
   headers: Record<string, string> = {},
 ): Promise<{ status: number; body: unknown }> {
   const response = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json", ...headers },
-    body: JSON.stringify(body),
+    body: rawBody,
   });
   const text = await response.text();
   return { status: response.status, body: text.length === 0 ? null : JSON.parse(text) };
+}
+
+function tossWebhookHeaders(rawBody: string): Record<string, string> {
+  const transmissionTime = NOW.toISOString();
+  const signature = createHmac("sha256", Buffer.from(WEBHOOK_SECRET, "hex"))
+    .update(rawBody)
+    .update(":")
+    .update(transmissionTime)
+    .digest("base64");
+  return {
+    "tosspayments-webhook-signature": `v1:${signature}`,
+    "tosspayments-webhook-transmission-time": transmissionTime,
+  };
+}
+
+async function post(
+  url: string,
+  body: unknown,
+  headers: Record<string, string> = {},
+): Promise<{ status: number; body: unknown }> {
+  const rawBody = JSON.stringify(body) ?? "null";
+  return postRaw(url, rawBody, headers);
 }
 
 async function openDeposit(
@@ -248,21 +277,40 @@ async function openDeposit(
   return { depositId: depositId as string, status: created.status };
 }
 
+function confirmDeposit(
+  baseUrl: string,
+  contractId: string,
+  depositId: string,
+  overrides: Partial<{ paymentKey: string; amount: number }> = {},
+  headers: Record<string, string>,
+): Promise<{ status: number; body: unknown }> {
+  return post(
+    `${baseUrl}/contracts/${contractId}/deposits/${depositId}/confirm`,
+    {
+      paymentKey: overrides.paymentKey ?? "pk-confirm-http",
+      amount: overrides.amount ?? 3_255_000,
+    },
+    headers,
+  );
+}
+
 function webhook(
   baseUrl: string,
   depositId: string,
   overrides: Partial<{ paymentKey: string; amount: number; status: string; transactionKey: string }> = {},
 ): Promise<{ status: number; body: unknown }> {
-  return post(
+  const payload = {
+    orderId: depositId,
+    paymentKey: overrides.paymentKey ?? "pk-g203",
+    amount: overrides.amount ?? 3_255_000,
+    status: overrides.status ?? "DONE",
+    transactionKey: overrides.transactionKey ?? `tx-${randomUUID()}`,
+  };
+  const rawBody = JSON.stringify(payload) ?? "null";
+  return postRaw(
     `${baseUrl}/integrations/toss/payment-events`,
-    {
-      orderId: depositId,
-      paymentKey: overrides.paymentKey ?? "pk-g203",
-      amount: overrides.amount ?? 3_255_000,
-      status: overrides.status ?? "DONE",
-      transactionKey: overrides.transactionKey ?? `tx-${randomUUID()}`,
-    },
-    { "x-toss-webhook-secret": WEBHOOK_SECRET },
+    rawBody,
+    tossWebhookHeaders(rawBody),
   );
 }
 
@@ -341,6 +389,115 @@ describe("INT-G2-03: C HTTP 예치 확정 원자성", { skip: hasDatabase ? fals
       assert.equal((again.body as { isDuplicate?: boolean }).isDuplicate, true);
       assert.equal(await prisma.paymentInstallment.count({ where: { contractId: ids.contractId } }), 2);
       assert.equal(await prisma.paymentEvent.count({ where: { depositId, eventType: "VERIFIED" } }), 1);
+    } finally {
+      await running.close();
+      await cleanup(prisma, ids);
+      await prisma.$disconnect();
+    }
+  });
+
+  it("Toss 원형 PAYMENT_STATUS_CHANGED도 같은 예치 확정을 만든다", async () => {
+    // 준비
+    const prisma = new PrismaClient();
+    const ids = await seed(prisma);
+    const running = await start(prisma, ids);
+    try {
+      const { depositId } = await openDeposit(running.baseUrl, ids);
+
+      // 실행: 내부 평면 형식이 아닌 Toss 원형 eventType/data 본문
+      const event = {
+        eventType: "PAYMENT_STATUS_CHANGED",
+        createdAt: new Date().toISOString(),
+        data: {
+          orderId: depositId,
+          paymentKey: "pk-raw-http",
+          totalAmount: 3_255_000,
+          status: "DONE",
+        },
+      };
+      const rawBody = JSON.stringify(event) ?? "null";
+      const result = await postRaw(
+        `${running.baseUrl}/integrations/toss/payment-events`,
+        rawBody,
+        tossWebhookHeaders(rawBody),
+      );
+
+      // 확인: 예치·계약만 완료되고 구간은 2개다
+      assert.equal(result.status, 200);
+      assert.equal((result.body as { status?: string }).status, "COMPLETED");
+      const deposit = await prisma.escrowDeposit.findUniqueOrThrow({ where: { id: depositId } });
+      assert.equal(deposit.status, "COMPLETED");
+      assert.equal(deposit.pgKey, "pk-raw-http");
+      assert.equal((await prisma.contract.findUniqueOrThrow({ where: { id: ids.contractId } })).paymentStatus, "DEPOSITED");
+      assert.equal(await prisma.paymentInstallment.count({ where: { contractId: ids.contractId } }), 2);
+    } finally {
+      await running.close();
+      await cleanup(prisma, ids);
+      await prisma.$disconnect();
+    }
+  });
+
+  it("사용자 confirm은 소유자·금액을 검사하고 PG 승인 후 한 번만 완료한다", async () => {
+    // 준비
+    const prisma = new PrismaClient();
+    const ids = await seed(prisma);
+    const running = await start(prisma, ids);
+    const clientHeaders = { "x-test-user": ids.clientId, "x-test-role": "CLIENT" };
+    try {
+      const { depositId } = await openDeposit(running.baseUrl, ids);
+
+      // 실행 및 확인: 계약 소유자가 아니면 403
+      const forbidden = await confirmDeposit(
+        running.baseUrl,
+        ids.contractId,
+        depositId,
+        {},
+        { "x-test-user": ids.supplierBId, "x-test-role": "CLIENT" },
+      );
+      assert.equal(forbidden.status, 403);
+
+      // 실행 및 확인: 저장된 금액과 다르면 400
+      const mismatch = await confirmDeposit(
+        running.baseUrl,
+        ids.contractId,
+        depositId,
+        { amount: 1 },
+        clientHeaders,
+      );
+      assert.equal(mismatch.status, 400);
+
+      // 실행 및 확인: 다른 예치 건은 404
+      const missing = await confirmDeposit(
+        running.baseUrl,
+        ids.contractId,
+        randomUUID(),
+        {},
+        clientHeaders,
+      );
+      assert.equal(missing.status, 404);
+
+      // 실행: 의뢰인이 Toss 승인 확인
+      const confirmed = await confirmDeposit(running.baseUrl, ids.contractId, depositId, {}, clientHeaders);
+
+      // 확인: 예치·계약·2구간이 확정된다
+      assert.equal(confirmed.status, 200);
+      assert.equal(
+        (confirmed.body as { data?: { deposit?: { status?: string } } }).data?.deposit?.status,
+        "COMPLETED",
+      );
+      const deposit = await prisma.escrowDeposit.findUniqueOrThrow({ where: { id: depositId } });
+      assert.equal(deposit.status, "COMPLETED");
+      assert.equal(deposit.pgKey, "pk-confirm-http");
+      assert.equal(
+        (await prisma.contract.findUniqueOrThrow({ where: { id: ids.contractId } })).paymentStatus,
+        "DEPOSITED",
+      );
+      assert.equal(await prisma.paymentInstallment.count({ where: { contractId: ids.contractId } }), 2);
+
+      // 실행 및 확인: 같은 승인 재요청은 멱등이다
+      const again = await confirmDeposit(running.baseUrl, ids.contractId, depositId, {}, clientHeaders);
+      assert.equal(again.status, 200);
+      assert.equal(await prisma.paymentInstallment.count({ where: { contractId: ids.contractId } }), 2);
     } finally {
       await running.close();
       await cleanup(prisma, ids);
@@ -497,7 +654,7 @@ describe("INT-G2-03: C HTTP 예치 확정 원자성", { skip: hasDatabase ? fals
     }
   });
 
-  it("위조 웹훅·금액 불일치·PG 검증 실패·기한 경과는 완료 없이 HELD/401로 격리한다", async () => {
+  it("서명 누락·금액 불일치·기한 경과는 완료 없이 401/HELD로 격리한다", async () => {
     // 준비
     const prisma = new PrismaClient();
     const ids = await seed(prisma);
@@ -506,12 +663,12 @@ describe("INT-G2-03: C HTTP 예치 확정 원자성", { skip: hasDatabase ? fals
       const forged = await start(prisma, ids);
       try {
         const { depositId } = await openDeposit(forged.baseUrl, ids);
-        const noSecret = await post(
+        const unsigned = await post(
           `${forged.baseUrl}/integrations/toss/payment-events`,
           { orderId: depositId, paymentKey: "pk", amount: 3_255_000, status: "DONE" },
         );
         // 확인
-        assert.equal(noSecret.status, 401);
+        assert.equal(unsigned.status, 401);
         assert.equal(
           (await prisma.escrowDeposit.findUniqueOrThrow({ where: { id: depositId } })).status,
           "PENDING",
@@ -571,6 +728,34 @@ describe("INT-G2-03: C HTTP 예치 확정 원자성", { skip: hasDatabase ? fals
       );
     } finally {
       await rejected.close();
+      await cleanup(prisma, ids);
+      await prisma.$disconnect();
+    }
+  });
+
+  it("PG 재조회가 일시 실패하면 503과 PENDING을 유지해 Toss 재전송을 기다린다", async () => {
+    // 준비
+    const prisma = new PrismaClient();
+    const ids = await seed(prisma);
+    const unavailable = await start(prisma, ids, {
+      verify() {
+        throw new Error("PG_NETWORK_TIMEOUT");
+      },
+    });
+    try {
+      const { depositId } = await openDeposit(unavailable.baseUrl, ids);
+
+      // 실행 및 확인: PG 오류를 성공이나 HELD로 삼키지 않아 webhook 재전송이 가능하다
+      const result = await webhook(unavailable.baseUrl, depositId);
+      assert.equal(result.status, 503);
+      assert.equal(
+        (await prisma.escrowDeposit.findUniqueOrThrow({ where: { id: depositId } })).status,
+        "PENDING",
+      );
+      assert.equal(await prisma.paymentEvent.count({ where: { depositId } }), 0);
+      assert.equal(await prisma.paymentInstallment.count({ where: { contractId: ids.contractId } }), 0);
+    } finally {
+      await unavailable.close();
       await cleanup(prisma, ids);
       await prisma.$disconnect();
     }

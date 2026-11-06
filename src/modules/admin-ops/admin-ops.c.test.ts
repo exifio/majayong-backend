@@ -709,7 +709,7 @@ describe("C-09: 관리자 블록/예치/분쟁/정산/감사 API", () => {
       },
     );
     // 확인: 이견은 OPEN, 납품·구간은 REWORK_REQUESTED, 항목은 미승인 유지
-    assert.equal(reworkDecision.status, "RESOLVED");
+    assert.equal(reworkDecision.status, "OPEN");
     const reworkInspection = await rework.deliveryRepo.getInspectionRequest(rework.inspectionId);
     assert.equal(reworkInspection?.status, "OPEN");
     const reworkDelivery = await rework.deliveryRepo.getDelivery(reworkInspection!.deliveryId);

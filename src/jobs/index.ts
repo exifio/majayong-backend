@@ -6,7 +6,7 @@ import {
 } from "../modules/deposit/index.ts";
 
 export interface DueJobRunnerOptions {
-  services: Omit<DueJobsContext, "targets" | "retries" | "depositContractIds" | "cancellationContractIds" | "deliveryIds" | "notificationContractIds">;
+  services: Omit<DueJobsContext, "targets" | "retries" | "depositContractIds" | "cancellationContractIds" | "deliveryIds" | "notificationContractIds" | "pendingDepositIds">;
   targets: DueJobTargets;
   retries?: number;
   clock?: { now(): Date };

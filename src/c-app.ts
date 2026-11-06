@@ -29,8 +29,6 @@ export interface AppOptions {
   services: AppServices;
   /** 토큰/세션 검증. null이면 401. 통합 담당이 실제 인증으로 교체한다. */
   authenticate(req: IncomingMessage): Promise<HttpActor | null> | HttpActor | null;
-  /** 웹훅 서버 비밀키 헤더 이름. 기본 x-toss-webhook-secret. */
-  webhookSecretHeader?: string;
   maxBodyBytes?: number;
   /**
    * true면 매칭되지 않은 경로에 C 자체 404를 쓰지 않고 반환한다.
@@ -44,6 +42,7 @@ interface RouteContext {
   params: Record<string, string>;
   query: URLSearchParams;
   body: Record<string, unknown>;
+  rawBody?: Buffer;
   req: IncomingMessage;
 }
 
@@ -79,6 +78,14 @@ const ROUTES: Route[] = [
   route("GET", "/contracts/:contractId/deposits", "user", async ({ actor, params }, s) => ({
     body: await s.deposits.getDeposits(actor, params.contractId),
   })),
+  route("POST", "/contracts/:contractId/deposits/:depositId/confirm", "user", async ({ actor, params, body }, s) => ({
+    body: await s.deposits.confirmDeposit(actor, {
+      contractId: params.contractId,
+      depositId: params.depositId,
+      paymentKey: String(body.paymentKey ?? ""),
+      amount: Number(body.amount),
+    }),
+  })),
   route("GET", "/me/payment-statements", "user", async ({ actor }, s) => ({
     body: await s.settlement.getMyPaymentStatements(actor),
   })),
@@ -91,11 +98,16 @@ const ROUTES: Route[] = [
   route("POST", "/installments/:installmentId/tax-invoice-issued", "user", async ({ actor, params }, s) => ({
     body: await s.settlement.markTaxInvoiceIssued(actor, { installmentId: params.installmentId }),
   })),
-  route("POST", "/integrations/toss/payment-events", "webhook", async ({ body, req }, s) => {
-    const header = req.headers["x-toss-webhook-secret"];
+  route("POST", "/integrations/toss/payment-events", "webhook", async ({ body, rawBody, req }, s) => {
+    const signature = req.headers["tosspayments-webhook-signature"];
+    const transmissionTime = req.headers["tosspayments-webhook-transmission-time"];
     return {
       body: await s.deposits.handleTossWebhook(
-        { serverSecret: Array.isArray(header) ? header[0] : header },
+        {
+          ...(typeof signature === "string" ? { signature } : {}),
+          ...(typeof transmissionTime === "string" ? { transmissionTime } : {}),
+          ...(rawBody === undefined ? {} : { rawPayload: rawBody }),
+        },
         body,
       ),
     };
@@ -282,14 +294,20 @@ function matchRoute(method: string, pathname: string): { route: Route; params: R
   return null;
 }
 
-async function readJsonBody(req: IncomingMessage, maxBytes: number): Promise<Record<string, unknown>> {
-  const reqBody = (req as unknown as { body?: unknown }).body;
+async function readJsonBody(
+  req: IncomingMessage,
+  maxBytes: number,
+): Promise<{ body: Record<string, unknown>; rawBody?: Buffer }> {
+  const request = req as IncomingMessage & { body?: unknown; rawBody?: Buffer };
+  const reqBody = request.body;
   if (typeof reqBody === "object" && reqBody !== null) {
-    const body = reqBody;
-    if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    if (Array.isArray(reqBody)) {
       throw Object.assign(new Error("not object"), { status: 400 });
     }
-    return body as Record<string, unknown>;
+    return {
+      body: reqBody as Record<string, unknown>,
+      ...(request.rawBody === undefined ? {} : { rawBody: request.rawBody }),
+    };
   }
   const chunks: Buffer[] = [];
   let size = 0;
@@ -301,13 +319,14 @@ async function readJsonBody(req: IncomingMessage, maxBytes: number): Promise<Rec
     }
     chunks.push(buffer);
   }
-  if (size === 0) return {};
+  if (size === 0) return { body: {} };
   try {
-    const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    const rawBody = Buffer.concat(chunks);
+    const parsed: unknown = JSON.parse(rawBody.toString("utf8"));
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
       throw new Error("not object");
     }
-    return parsed as Record<string, unknown>;
+    return { body: parsed as Record<string, unknown>, rawBody };
   } catch {
     throw Object.assign(new Error("INVALID_JSON"), { status: 400 });
   }
@@ -365,7 +384,11 @@ export function createHttpHandler(options: AppOptions) {
     const isWebhook = matched.route.auth === "webhook";
 
     try {
-      const body = matched.route.method === "GET" ? {} : await readJsonBody(req, maxBodyBytes);
+      const parsedBody = matched.route.method === "GET"
+        ? { body: {} }
+        : await readJsonBody(req, maxBodyBytes);
+      const body = parsedBody.body;
+      const rawBody = parsedBody.rawBody;
       let actor: HttpActor | null = null;
       if (matched.route.auth === "user") {
         actor = await options.authenticate(req);
@@ -382,6 +405,7 @@ export function createHttpHandler(options: AppOptions) {
           query: url.searchParams,
           body,
           req,
+          ...(rawBody === undefined ? {} : { rawBody }),
         },
         options.services,
       );

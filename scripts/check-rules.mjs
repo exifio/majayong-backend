@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 의존성 없는 정적 검사. `docs/CODE_STANDARDS.md`의 금지 패턴 중
+ * 의존성 없는 정적 검사. `AGENTS.md`의 금지 패턴 중
  * 기계적으로 판별 가능한 것만 본다. 금액/트랜잭션/권한 규칙은 리뷰 대상이다.
  *
  * - 실패: as any, @ts-ignore, @ts-nocheck

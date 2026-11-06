@@ -193,6 +193,7 @@ afterAll(async () => {
   await db.notification.deleteMany({ where: { userId: { in: userIds } } });
   await db.eventLog.deleteMany({ where: { userId: { in: userIds } } });
   await db.review.deleteMany({ where: { contractId: { in: contractIds } } });
+  await db.inspectionRequest.deleteMany({ where: { contractItem: { contractId: { in: contractIds } } } });
   await db.delivery.deleteMany({ where: { installment: { contractId: { in: contractIds } } } });
   await db.paymentEvent.deleteMany({ where: { deposit: { contractId: { in: contractIds } } } });
   await db.paymentInstallment.deleteMany({ where: { contractId: { in: contractIds } } });
@@ -257,6 +258,135 @@ describe("E2E-05 납품·검수·정산", () => {
       close();
     }
   });
+
+  it("납품·검수·보완 단계의 역할과 상태를 거부한다", async () => {
+    // 준비: 예치까지 끝난 계약, 당사자와 제3자 토큰
+    const seed = await seedActiveContract();
+    const clientToken = token(seed.clientId, Role.CLIENT);
+    const supplierToken = token(seed.supplierId, Role.SUPPLIER);
+    const outsiderId = randomUUID();
+    userIds.push(outsiderId);
+    await db.user.create({ data: { id: outsiderId, email: `e2e5o-${outsiderId}@example.invalid`, role: Role.CLIENT } });
+    await db.clientProfile.create({ data: { userId: outsiderId, businessName: "다른 가게", profileCompleted: true } });
+    const outsiderToken = token(outsiderId, Role.CLIENT);
+    const { baseUrl, close } = await startApp();
+
+    try {
+      // 준비: 구간 확인
+      const installments = await req(baseUrl, "GET", `/api/v1/contracts/${seed.contractId}/installments`, clientToken);
+      expect(installments.status).toBe(200);
+      const interim = (installments.body.data.installments as Array<{ id: string; stage: string }>)
+        .find(row => row.stage === "INTERIM");
+      if (!interim) throw new Error("interim installment missing");
+
+      // 실행 및 확인: 제3자는 정산 구간을 볼 수 없다
+      const outsiderInstallments = await req(baseUrl, "GET", `/api/v1/contracts/${seed.contractId}/installments`, outsiderToken);
+      expect(outsiderInstallments.status).toBe(403);
+
+      // 실행 및 확인: 의뢰인은 납품을 제출할 수 없다
+      const clientSubmit = await req(baseUrl, "POST", `/api/v1/installments/${interim.id}/deliveries`, clientToken, {
+        items: [{ contractItemId: seed.interimItemId, links: [], files: [], howToCheck: "확인" }],
+      });
+      expect(clientSubmit.status).toBe(403);
+
+      // 실행: 공급자가 중간 항목을 납품한다
+      const submitted = await req(baseUrl, "POST", `/api/v1/installments/${interim.id}/deliveries`, supplierToken, {
+        items: [{ contractItemId: seed.interimItemId, links: [], files: [], howToCheck: "확인" }],
+      });
+      // 확인: 납품이 접수된다
+      expect(submitted.status).toBe(201);
+
+      // 실행 및 확인: 공급자는 자기 납품을 승인할 수 없다
+      const supplierApprove = await req(baseUrl, "POST", `/api/v1/contract-items/${seed.interimItemId}/approve`, supplierToken, {
+        deliveryId: submitted.body.data.id,
+      });
+      expect(supplierApprove.status).toBe(403);
+
+      // 실행 및 확인: 제3자는 승인할 수 없다
+      const outsiderApprove = await req(baseUrl, "POST", `/api/v1/contract-items/${seed.interimItemId}/approve`, outsiderToken, {
+        deliveryId: submitted.body.data.id,
+      });
+      expect(outsiderApprove.status).toBe(403);
+
+      // 실행 및 확인: 보완 사유가 올바르지 않으면 400
+      const badRework = await req(baseUrl, "POST", `/api/v1/contract-items/${seed.interimItemId}/rework-requests`, clientToken, {
+        deliveryId: submitted.body.data.id,
+        reason: "UNKNOWN",
+        note: "사유",
+      });
+      expect(badRework.status).toBe(400);
+
+      // 실행 및 확인: 보완 사유 설명이 없으면 400
+      const noNote = await req(baseUrl, "POST", `/api/v1/contract-items/${seed.interimItemId}/rework-requests`, clientToken, {
+        deliveryId: submitted.body.data.id,
+        reason: "NOT_WORKING",
+      });
+      expect(noNote.status).toBe(400);
+
+      // 실행: 의뢰인이 보완을 요청한다
+      const rework = await req(baseUrl, "POST", `/api/v1/contract-items/${seed.interimItemId}/rework-requests`, clientToken, {
+        deliveryId: submitted.body.data.id,
+        reason: "NOT_WORKING",
+        note: "버튼이 동작하지 않습니다",
+      });
+      // 확인: 보완 요청이 접수된다
+      expect(rework.status).toBe(201);
+      const inspectionRequestId = rework.body.data.id as string;
+
+      // 실행: 의뢰인이 운영자 이견 개입을 요청한다
+      const escalated = await req(baseUrl, "POST", `/api/v1/inspection-requests/${inspectionRequestId}/escalate`, clientToken, {
+        reason: "판단이 필요합니다",
+        what: "버튼 동작 여부",
+      });
+      // 확인: 이견 개입 상태가 된다
+      expect(escalated.status).toBe(200);
+      expect(escalated.body.data.status).toBe("ESCALATED");
+
+      // 준비: 운영자 계정
+      const adminId = randomUUID();
+      userIds.push(adminId);
+      await db.user.create({ data: { id: adminId, email: `e2e5a-${adminId}@example.invalid`, role: Role.ADMIN } });
+      const adminToken = token(adminId, Role.ADMIN);
+      const decisionBody = {
+        decision: "REWORK_VALID",
+        reason: "보완이 맞습니다",
+        decisionNotes: { client: "보완이 맞습니다", supplier: "보완이 필요합니다" },
+      };
+
+      // 실행 및 확인: 운영자가 아니면 판정할 수 없다
+      const outsiderDecision = await req(baseUrl, "POST", `/api/v1/admin/inspection-requests/${inspectionRequestId}/decision`, outsiderToken, decisionBody);
+      expect(outsiderDecision.status).toBe(403);
+
+      // 실행: 운영자가 보완 유효로 판정한다
+      const decision = await req(baseUrl, "POST", `/api/v1/admin/inspection-requests/${inspectionRequestId}/decision`, adminToken, decisionBody);
+      // 확인: 판정이 저장되고 보완 요청은 다시 진행 상태(OPEN)로 돌아간다
+      expect(decision.status).toBe(200);
+      expect(decision.body.data.decision).toBe("REWORK_VALID");
+      expect(decision.body.data.status).toBe("OPEN");
+
+      // 실행: 공급자가 보완 항목을 다시 납품한다
+      const resubmitted = await req(baseUrl, "POST", `/api/v1/installments/${interim.id}/deliveries`, supplierToken, {
+        items: [{ contractItemId: seed.interimItemId, links: [], files: [], howToCheck: "재확인" }],
+      });
+      expect(resubmitted.status).toBe(201);
+
+      // 실행: 의뢰인이 재납품을 승인한다
+      const approved = await req(baseUrl, "POST", `/api/v1/contract-items/${seed.interimItemId}/approve`, clientToken, {
+        deliveryId: resubmitted.body.data.id,
+      });
+      expect(approved.status).toBe(200);
+
+      // 실행 및 확인: 승인된 항목은 보완 요청할 수 없다
+      const afterApprove = await req(baseUrl, "POST", `/api/v1/contract-items/${seed.interimItemId}/rework-requests`, clientToken, {
+        deliveryId: resubmitted.body.data.id,
+        reason: "NOT_WORKING",
+        note: "다시",
+      });
+      expect(afterApprove.status).toBe(409);
+    } finally {
+      close();
+    }
+  });
 });
 
 // 완료된 계약에서 양측 리뷰가 공개 평점에 반영되는지 검증한다.
@@ -266,6 +396,11 @@ describe("E2E-06 상호 리뷰", () => {
     const seed = await seedActiveContract();
     const clientToken = token(seed.clientId, Role.CLIENT);
     const supplierToken = token(seed.supplierId, Role.SUPPLIER);
+    const outsiderId = randomUUID();
+    userIds.push(outsiderId);
+    await db.user.create({ data: { id: outsiderId, email: `e2e6o-${outsiderId}@example.invalid`, role: Role.CLIENT } });
+    await db.clientProfile.create({ data: { userId: outsiderId, businessName: "다른 가게", profileCompleted: true } });
+    const outsiderToken = token(outsiderId, Role.CLIENT);
     const { baseUrl, close } = await startApp();
 
     try {
@@ -305,6 +440,25 @@ describe("E2E-06 상호 리뷰", () => {
       });
       // 확인: 의뢰인 리뷰가 저장된다
       expect(clientReview.status).toBe(201);
+
+      // 실행 및 확인: 같은 의뢰인이 다시 리뷰하면 409
+      const duplicateReview = await req(baseUrl, "POST", `/api/v1/contracts/${seed.contractId}/reviews`, clientToken, {
+        rating: 5, comment: "또",
+      });
+      expect(duplicateReview.status).toBe(409);
+
+      // 실행 및 확인: 계약 당사자가 아니면 리뷰할 수 없다
+      const outsiderReview = await req(baseUrl, "POST", `/api/v1/contracts/${seed.contractId}/reviews`, outsiderToken, {
+        rating: 5, comment: "제3자",
+      });
+      expect(outsiderReview.status).toBe(403);
+
+      // 실행 및 확인: 별점 범위를 벗어나면 400
+      const invalidRating = await req(baseUrl, "POST", `/api/v1/contracts/${seed.contractId}/reviews`, supplierToken, {
+        rating: 6, comment: "범위 밖",
+      });
+      expect(invalidRating.status).toBe(400);
+
       // 실행: 공급자 리뷰 작성
       const supplierReview = await req(baseUrl, "POST", `/api/v1/contracts/${seed.contractId}/reviews`, supplierToken, {
         rating: 4, comment: "감사합니다",

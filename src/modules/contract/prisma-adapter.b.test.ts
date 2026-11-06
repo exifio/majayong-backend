@@ -34,6 +34,7 @@ function contractRow(overrides: Partial<ContractRow> = {}): ContractRow {
     totalDeposited: 0,
     items: [
       {
+        id: 'item-1',
         blockId: 'block-1',
         title: '예약',
         description: '예약 기능',
@@ -114,6 +115,7 @@ function makeDb(rows: ContractRow[]) {
           id: `contract-${rows.length + 1}`,
           applicationId: data.applicationId,
           items: data.items.create.map((item) => ({
+            id: String(item.id),
             blockId: String(item.blockId),
             title: String(item.title),
             description: String(item.description),
@@ -234,6 +236,7 @@ describe('B-05 Prisma 계약 어댑터', () => {
       contentHash: 'hash-1',
       items: [
         {
+          id: 'item-1',
           blockId: 'block-1',
           title: '예약',
           description: '예약 기능',
@@ -363,6 +366,7 @@ describe('B-05 Prisma 계약 어댑터', () => {
       contractRow({
         items: [
           {
+            id: 'item-1',
             blockId: 'block-1',
             title: '예약',
             description: '예약 기능',

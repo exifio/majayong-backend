@@ -33,6 +33,7 @@ export type ContractStatusRow =
   | 'CANCELLED';
 
 export interface ContractItemRow {
+  readonly id: string;
   readonly blockId: string;
   readonly title: string;
   readonly description: string;
@@ -134,6 +135,7 @@ export function toContractRecord(row: ContractRow): ContractRecord {
     paymentStatus: row.paymentStatus,
     totalDeposited: row.totalDeposited,
     items: row.items.map((item) => ({
+      id: item.id,
       blockId: item.blockId,
       title: item.title,
       description: item.description,
@@ -352,6 +354,7 @@ export function createContractTx(
           contentHash: input.contentHash,
           items: {
             create: input.items.map((item) => ({
+              id: item.id,
               blockId: item.blockId,
               title: item.title,
               description: item.description,

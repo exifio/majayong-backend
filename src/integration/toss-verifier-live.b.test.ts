@@ -35,4 +35,21 @@ describe("INT-D08: Toss sandbox 자격 증명", { skip: secretKey ? false : "TOS
     assert.equal(result.status, "DONE");
     assert.equal(result.amount, amount);
   });
+
+  it("sandbox 결제건은 orderId로도 재조회된다", {
+    skip: paymentKey && orderId && amount ? false : "TOSS_TEST_PAYMENT_KEY/ORDER_ID/AMOUNT 없음",
+  }, async () => {
+    // 준비
+    const verifier = createTossSandboxVerifier({ secretKey: secretKey as string, baseUrl });
+
+    // 실행
+    const lookup = await verifier.findPaymentByOrderId(orderId as string);
+    if (!lookup.found) throw new Error("sandbox order lookup failed");
+
+    // 확인: paymentKey 자체는 출력하지 않는다
+    assert.ok(lookup.orderId === orderId, "orderId mismatch");
+    assert.ok(typeof lookup.paymentKey === "string" && lookup.paymentKey.length > 0, "paymentKey missing");
+    assert.equal(lookup.amount, amount);
+    assert.equal(lookup.status, "DONE");
+  });
 });

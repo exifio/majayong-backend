@@ -7,7 +7,7 @@
  * - 결렬 시 계약 CANCELLED, 지원 REJECTED, 프로젝트는 7.1 규칙으로 복귀한다.
  * - 실제 PG·PDF 생성은 하지 않고 C/통합이 구현할 Port만 둔다.
  */
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { emptyDraft, type AgreementCondition, type AgreementDraft, type AgreementSpec } from '../agreement/draft.js';
 import { ApplicationError, type ApplicationRecord, type ApplicationStatus } from '../application/dto.js';
@@ -61,6 +61,7 @@ export interface ContractActor {
 }
 
 export interface ContractItemRecord {
+  readonly id: string;
   readonly blockId: string;
   readonly title: string;
   readonly description: string;
@@ -334,6 +335,7 @@ export function prepareProvisionalContract(input: {
         );
       }
       return {
+        id: randomUUID(),
         blockId: agreementItem.blockId,
         title: agreementItem.title,
         description: source.description,

@@ -5,8 +5,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * INT-C-04: 기한 도래 대상 조회. `runDueJobs`에 주입한다.
- * 인덱스: contracts(status,depositDeadline|workDueAt|cancelRequestedAt),
- * deliveries(status,inspectionDueAt)
+ * 인덱스: contracts(status,depositDeadline|workDueAt|cancelRequestedAt), deliveries(status,inspectionDueAt),
+ * escrow_deposits(status,createdAt)
  */
 export function createPrismaDueJobTargets(prisma: PrismaClient): DueJobTargets {
   return {
@@ -16,6 +16,16 @@ export function createPrismaDueJobTargets(prisma: PrismaClient): DueJobTargets {
           status: "ACTIVE",
           paymentStatus: "PENDING",
           depositDeadline: { not: null, lte: now },
+        },
+        select: { id: true },
+      });
+      return rows.map((row) => row.id);
+    },
+    async pendingDepositIds(createdBefore: Date) {
+      const rows = await prisma.escrowDeposit.findMany({
+        where: {
+          status: "PENDING",
+          createdAt: { lte: createdBefore },
         },
         select: { id: true },
       });

@@ -16,6 +16,7 @@
     "db:migrate": "prisma migrate deploy --schema prisma/schema.prisma",
     "db:migrate:staging": "DATABASE_URL=\"$MIGRATION_DATABASE_URL\" prisma migrate deploy --schema prisma/schema.prisma",
     "db:seed:staging": "node scripts/seed-staging.mjs",
+    "db:seed:demo": "node scripts/seed-demo-fixtures.mjs",
     "db:verify:b": "node scripts/verify-b-pg.mjs",
     "test:a": "jest --runInBand",
     "test:b": "DATABASE_URL=\"${DATABASE_URL:-}\" node --import ./tests/b/resolve-ts.mjs --test $(find src openapi -name '*.b.test.ts')",

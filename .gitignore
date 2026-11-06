@@ -1,10 +1,10 @@
 node_modules/
 dist/
 
-# 로컬 전용 (AGENTS.md 6.1) — GitHub 업로드 금지
+# 로컬 전용
 .DS_Store
-AGENTS.md
-docs/
+
+# docs/
 
 # 비밀값·환경 설정
 .env
@@ -20,7 +20,8 @@ CLAUDE.md
 .cursor/
 
 .code-review-graph
-.commandcode
 
 # Vercel local link
 .vercel/
+.vercel
+.env*

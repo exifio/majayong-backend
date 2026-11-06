@@ -83,6 +83,9 @@ DATABASE_URL="$MIGRATION_DATABASE_URL" npm run db:seed:staging
 선택:
 `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_USD_TO_KRW_RATE`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`.
 
+비밀번호 재설정 메일(D-27, 셋 다 있어야 활성화):
+`RESEND_API_KEY`, `MAIL_FROM`, `APP_BASE_URL`. staging에서는 수신 허용목록만 실제 발송하고, 키·토큰·수신 주소를 로그에 남기지 않는다.
+
 결제 완료 검증 전 비활성:
 `TOSS_SECRET_KEY`, `TOSS_SANDBOX_BASE_URL`, `TOSS_WEBHOOK_SECRET`.
 
@@ -111,7 +114,7 @@ FE Vercel:
 ## 6. 제한·차단
 
 - Vercel Function `maxDuration` 60초, `memory` 1024MB. 장시간 배치/대용량 작업은 별도 worker 필요.
-- `JOB_SCHEDULER_ENABLED=false`이므로 서명·예치 기한 자동 결렬/마감 배치는 실행되지 않는다.
+- 이 런북의 `JOB_SCHEDULER_ENABLED=false`에서는 예치 orderId 재조회와 서명·예치 기한 배치가 실행되지 않는다. orderId 복구는 `TOSS_SECRET_KEY`가 Toss API 개별 `test_sk`/`live_sk` 키이고 장기 실행 worker의 scheduler가 켜져야 동작한다.
 - Toss 실제 결제·webhook 완료는 비활성. 예치 요청은 PENDING까지만.
-- 실제 송금·정산·환불, PDF 렌더링, 이메일 발송은 범위 밖/미연결.
+- 실제 송금·정산·환불, PDF 렌더링은 범위 밖이다. 비밀번호 재설정 메일은 adapter(D-27)가 있으나 `RESEND_API_KEY`·`MAIL_FROM`·`APP_BASE_URL`이 없으면 503이다.
 - Supabase DB 연결 문자열과 Vercel 프로젝트 연결은 별도 승인·자격이 필요하다.

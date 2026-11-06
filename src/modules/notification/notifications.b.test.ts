@@ -278,7 +278,7 @@ const TYPE_CASES: readonly TypeCase[] = [
     type: 'INQUIRY_ANSWERED',
     targetId: 'inquiry-1',
     userId: 'author-1',
-    targetUrl: '/help/inquiries/inquiry-1',
+    targetUrl: '/help/inquiry?tab=my&id=inquiry-1',
   },
 ];
 
@@ -486,12 +486,18 @@ describe('B-06-T02 수신자 규칙과 안전한 URL', () => {
 
       // 확인
       assert.equal(row.targetUrl.startsWith('/'), true);
-      for (const forbidden of ['http', '//', '?', '#', '..', '@']) {
+      for (const forbidden of ['http', '//', '#', '..', '@']) {
         assert.equal(
           row.targetUrl.includes(forbidden),
           false,
           `${row.targetUrl} contains ${forbidden}`,
         );
+      }
+      // 문의 답변만 '내 문의' 탭을 여는 고정 쿼리를 쓴다. targetId는 SAFE_TARGET으로 검증된 값이다.
+      if (testCase.type === 'INQUIRY_ANSWERED') {
+        assert.equal(row.targetUrl, `/help/inquiry?tab=my&id=${testCase.targetId}`);
+      } else {
+        assert.equal(row.targetUrl.includes('?'), false, `${row.targetUrl} contains ?`);
       }
     }
   });

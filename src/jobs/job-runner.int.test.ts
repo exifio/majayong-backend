@@ -210,4 +210,37 @@ describe("INT-C-04: 배치 러너·스케줄러", () => {
     assert.equal(result.success, false);
     assert.deepEqual(result.failures.map((failure) => failure.job), ["PROJECT_DEADLINE", "CONTRACT_BREAK"]);
   });
+  it("PG 주문 재조회는 시간 경계 대상을 처리하고 실패를 별도 job으로 기록한다", async () => {
+    const recovered: string[] = [];
+    let createdBefore: Date | undefined;
+    const runner = createDueJobRunner({
+      services: {
+        paymentRecoveryService: {
+          async reconcilePendingPayment(depositId) {
+            recovered.push(depositId);
+            if (depositId === "deposit-paid") return { completed: true };
+            throw new Error("PG_UNAVAILABLE");
+          },
+        },
+      },
+      targets: {
+        async pendingDepositIds(before) {
+          createdBefore = before;
+          return ["deposit-paid", "deposit-unavailable"];
+        },
+      },
+      retries: 0,
+      clock: { now: () => t0 },
+    });
+
+    // 실행
+    const result = await runner.runOnce();
+
+    // 확인
+    assert.equal(createdBefore?.getTime(), t0.getTime() - 15 * 60_000);
+    assert.deepEqual(recovered, ["deposit-paid", "deposit-unavailable"]);
+    assert.equal(result.success, false);
+    assert.equal(result.actionsCount, 1);
+    assert.deepEqual(result.failures.map((failure) => failure.job), ["TOSS_PAYMENT_RECONCILIATION"]);
+  });
 });

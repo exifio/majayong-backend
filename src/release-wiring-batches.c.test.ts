@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
 import { describe, it } from "node:test";
 import {
   DepositService,
@@ -33,6 +34,22 @@ describe("C-10: 배포용 기한 작업·전영역 연결 검증·인계", () =>
   const t3 = new Date("2026-12-10T10:00:00.000Z"); // 최종 납품
   const t4 = new Date("2026-12-17T10:00:00.000Z"); // 최종 승인 & 완료
   const t5 = new Date("2026-12-18T10:00:00.000Z"); // 리뷰 작성
+
+  const WEBHOOK_SECRET = "0123456789abcdef".repeat(4);
+
+  function sendWebhook(service: DepositService, payload: unknown) {
+    const rawPayload = Buffer.from(JSON.stringify(payload) ?? "null", "utf8");
+    const transmissionTime = t0.toISOString();
+    const signature = createHmac("sha256", Buffer.from(WEBHOOK_SECRET, "hex"))
+      .update(rawPayload)
+      .update(":")
+      .update(transmissionTime)
+      .digest("base64");
+    return service.handleTossWebhook(
+      { rawPayload, transmissionTime, signature: `v1:${signature}` },
+      payload,
+    );
+  }
 
   function createFullContext() {
     const depositRepo = createInMemoryDepositRepository();
@@ -112,7 +129,7 @@ describe("C-10: 배포용 기한 작업·전영역 연결 검증·인계", () =>
     const depositService = new DepositService({
       repo: depositRepo,
       contractsPort,
-      webhookSecret: "wh_secret_c10",
+      webhookSecret: WEBHOOK_SECRET,
       tossAdapter: {
         async verifyPayment(orderId, paymentKey, amount) {
           return { verified: true, orderId, paymentKey, amount, status: "DONE" };
@@ -234,7 +251,7 @@ describe("C-10: 배포용 기한 작업·전영역 연결 검증·인계", () =>
     const depositService = new DepositService({
       repo: store.depositRepository,
       contractsPort: store.contractsPort,
-      webhookSecret: "wh_secret_c10",
+      webhookSecret: WEBHOOK_SECRET,
       tossAdapter: {
         async verifyPayment(orderId, paymentKey, amount) {
           return { verified: true, orderId, paymentKey, amount, status: "DONE" };
@@ -297,15 +314,12 @@ describe("C-10: 배포용 기한 작업·전영역 연결 검증·인계", () =>
         amount: 3_255_000,
       },
     );
-    await ctx.depositService.handleTossWebhook(
-      { serverSecret: "wh_secret_c10" },
-      {
-        orderId: deposit.id,
-        paymentKey: "toss_pk_shared",
-        amount: 3_255_000,
-        status: "DONE",
-      },
-    );
+    await sendWebhook(ctx.depositService, {
+      orderId: deposit.id,
+      paymentKey: "toss_pk_shared",
+      amount: 3_255_000,
+      status: "DONE",
+    });
     const installments = (await ctx.store.depositRepository.listInstallments(ctx.contract.id)) as Array<{
       id: string;
       stage: "INTERIM" | "FINAL";
@@ -674,21 +688,18 @@ describe("C-10: 배포용 기한 작업·전영역 연결 검증·인계", () =>
     );
 
     // 실행: Toss 웹훅 처리
-    await ctx.depositService.handleTossWebhook(
-      { serverSecret: "wh_secret_c10" },
-      {
-        orderId: deposit.id,
-        paymentKey: "toss_pk_secret_check",
-        amount: 3_255_000,
-        status: "DONE",
-      },
-    );
+    await sendWebhook(ctx.depositService, {
+      orderId: deposit.id,
+      paymentKey: "toss_pk_secret_check",
+      amount: 3_255_000,
+      status: "DONE",
+    });
 
     // 확인: 결제 이벤트 직렬화 결과에 비밀값·비밀번호가 없음
     const events = await ctx.depositRepo.listPaymentEvents(deposit.id);
     for (const event of events) {
       const serialized = JSON.stringify(event);
-      assert.equal(serialized.includes("wh_secret_c10"), false);
+      assert.equal(serialized.includes(WEBHOOK_SECRET), false);
       assert.equal(serialized.includes("password"), false);
     }
   });

@@ -141,6 +141,9 @@ export function createIntegrationServices(config: IntegrationConfig) {
       completionService: completion,
       cancellationService: cancellations,
       batchService: inspections,
+      ...(config.ports.tossVerifier?.findPaymentByOrderId === undefined
+        ? {}
+        : { paymentRecoveryService: deposits }),
     },
     targets: createPrismaDueJobTargets(config.prisma),
     clock,

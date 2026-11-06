@@ -188,7 +188,19 @@ export function createApp(options: AppOptions): Express {
     res.setHeader("x-request-id", requestId);
     next();
   });
-  app.use(express.json({ limit: "16kb" }));
+  const tossWebhookPath = "/api/v1/integrations/toss/payment-events";
+  const normalJsonParser = express.json({ limit: "16kb" });
+  const tossWebhookJsonParser = express.json({
+    inflate: false,
+    verify(req, _res, rawBody) {
+      (req as Request & { rawBody?: Buffer }).rawBody = rawBody;
+    },
+  });
+  app.use((req, res, next) => {
+    const path = req.originalUrl.split("?")[0];
+    const parser = path === tossWebhookPath ? tossWebhookJsonParser : normalJsonParser;
+    parser(req, res, next);
+  });
 
   const router = express.Router();
   router.post("/auth/register", asyncRoute(async (req, res) => {
@@ -363,7 +375,7 @@ export function createApp(options: AppOptions): Express {
   app.use("/api/v1", router);
 
   const extraAuth = requireActorMiddleware(options);
-  // Toss 웹훅은 Bearer가 아니라 자체 비밀키로 C 핸들러에서 검증한다.
+  // Toss webhook HMAC signature is checked against raw request bytes in the C fallback.
   const PUBLIC_API_PATHS = new Set(["/api/v1/integrations/toss/payment-events"]);
   for (const extra of options.routers ?? []) {
     app.use("/api/v1", (req, res, next) => {

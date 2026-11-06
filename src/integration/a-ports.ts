@@ -7,6 +7,7 @@
 import type {
   ProjectCandidatePort,
   ProjectSearchPort,
+  ProjectSort,
   RecruitmentStatusFilter,
 } from '../modules/market/project-search.js';
 import type { ProjectStatus } from '../modules/market/public-project.js';
@@ -34,7 +35,9 @@ export interface AProjectSearchQuery {
     readonly minBudget?: number;
     readonly maxBudget?: number;
     readonly deadlineBefore?: Date;
+    readonly keyword?: string;
   };
+  readonly sort?: ProjectSort;
   readonly page: number;
   readonly pageSize: number;
 }
@@ -72,10 +75,14 @@ export function createAProjectSearchPort(search: ProjectSearchPort): AProjectSea
           ...(query.filters.deadlineBefore === undefined
             ? {}
             : { deadlineBefore: query.filters.deadlineBefore }),
+          ...(query.filters.keyword === undefined
+            ? {}
+            : { keyword: query.filters.keyword }),
           ...(statusFilter(query.filters.status) === undefined
             ? {}
             : { recruitmentStatus: statusFilter(query.filters.status) }),
         },
+        ...(query.sort === undefined ? {} : { sort: query.sort }),
         page: query.page,
       });
       return { projectIds: page.items.map((item) => item.id), total: page.meta.total };

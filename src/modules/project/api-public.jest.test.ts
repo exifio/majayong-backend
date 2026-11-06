@@ -166,6 +166,42 @@ describe("A-06 프로젝트 HTTP API", () => {
     expect(body.data[0]).not.toHaveProperty("hopeBudget");
   });
 
+  it("선택 검색 keyword·sort·deadlineBefore를 검색 포트에 넘기고 잘못된 값은 400이다", async () => {
+    // 준비: 의뢰인·공급자·프로젝트와 인자를 기록하는 검색 포트
+    const client = await makeClient();
+    const supplier = await makeSupplier();
+    const projectId = await makeProject(client.userId);
+    await addSpecItem(projectId, 1);
+    const searchPublicProjects = jest.fn(async (_query: unknown) => ({ projectIds: [projectId], total: 1 }));
+    const baseUrl = await startServer({ search: { searchPublicProjects } });
+
+    // 실행: 선택 쿼리 3개를 함께 전달
+    const response = await request(
+      baseUrl,
+      "GET",
+      "/projects?keyword=예약&sort=DEADLINE_SOON&deadlineBefore=2026-12-31",
+      supplier,
+    );
+
+    // 확인: 검증된 값이 그대로 검색 포트로 전달된다
+    expect(response.status).toBe(200);
+    expect(searchPublicProjects).toHaveBeenCalledWith({
+      filters: { keyword: "예약", deadlineBefore: new Date("2026-12-31") },
+      sort: "DEADLINE_SOON",
+      page: 1,
+      pageSize: 10,
+    });
+
+    // 실행 및 확인: 허용되지 않은 정렬·마감일 형식·빈 키워드는 400이다
+    const badSort = await request(baseUrl, "GET", "/projects?sort=RECENT", supplier);
+    expect(badSort.status).toBe(400);
+    const badDeadline = await request(baseUrl, "GET", "/projects?deadlineBefore=12/31/2026", supplier);
+    expect(badDeadline.status).toBe(400);
+    const blankKeyword = await request(baseUrl, "GET", "/projects?keyword=%20", supplier);
+    expect(blankKeyword.status).toBe(400);
+    expect(searchPublicProjects).toHaveBeenCalledTimes(1);
+  });
+
   it("검색 포트가 연결되지 않으면 공개 목록은 닫힌 상태로 실패한다", async () => {
     // 준비: 검색 포트 없이 띄운 서버
     const supplier = await makeSupplier();

@@ -28,7 +28,9 @@ describe("INT-C-04: Prisma 기한 대상·배치", { skip: hasDatabase ? false :
     const contractId = randomUUID();
     const blockId = randomUUID();
     const interimItemId = randomUUID();
+    const pendingDepositId = randomUUID();
     const now = new Date("2026-11-04T05:20:00.000Z");
+    const depositRecoveryCutoff = new Date(now.getTime() - 15 * 60 * 1000);
 
     try {
       // 준비: 계약·블록·항목 데이터 생성
@@ -130,11 +132,48 @@ describe("INT-C-04: Prisma 기한 대상·배치", { skip: hasDatabase ? false :
       await batch.sendDueNotifications(contractId, now);
       // 확인
       assert.equal(notifications.filter((row) => row.type === "WORK_DUE").length, 1);
+      // 준비: 15분 경계의 PENDING 주문
+      await prisma.escrowDeposit.create({
+        data: {
+          id: pendingDepositId,
+          contractId,
+          principal: 3_100_000,
+          clientFee: 155_000,
+          amount: 3_255_000,
+          idempotencyKey: `due-recovery-${pendingDepositId}`,
+          status: "PENDING",
+          createdAt: depositRecoveryCutoff,
+        },
+      });
+      // 확인: 경계 시각은 포함된다
+      assert.equal(
+        (await targets.pendingDepositIds!(depositRecoveryCutoff)).includes(pendingDepositId),
+        true,
+      );
+      // 실행: 주문 생성 시각이 경계 뒤면 대상에서 제외된다
+      await prisma.escrowDeposit.update({
+        where: { id: pendingDepositId },
+        data: { createdAt: new Date(depositRecoveryCutoff.getTime() + 1) },
+      });
+      assert.equal(
+        (await targets.pendingDepositIds!(depositRecoveryCutoff)).includes(pendingDepositId),
+        false,
+      );
+      // 실행: 경계 안이어도 완료한 주문은 대상에서 제외된다
+      await prisma.escrowDeposit.update({
+        where: { id: pendingDepositId },
+        data: { createdAt: depositRecoveryCutoff, status: "COMPLETED" },
+      });
+      assert.equal(
+        (await targets.pendingDepositIds!(depositRecoveryCutoff)).includes(pendingDepositId),
+        false,
+      );
     } finally {
       await prisma.inspectionRequest.deleteMany({ where: { delivery: { installment: { contractId } } } });
       await prisma.delivery.deleteMany({ where: { installment: { contractId } } });
       await prisma.paymentInstallment.deleteMany({ where: { contractId } });
       await prisma.contractItem.deleteMany({ where: { contractId } });
+      await prisma.escrowDeposit.deleteMany({ where: { contractId } });
       await prisma.contract.deleteMany({ where: { id: contractId } });
       await prisma.application.deleteMany({ where: { id: applicationId } });
       await prisma.project.deleteMany({ where: { id: projectId } });

@@ -788,7 +788,7 @@ export function createPrismaRepositories(prisma: PrismaClient, options: PrismaSt
       id: row.id,
       contractItemId: row.contractItemId,
       deliveryId: row.deliveryId,
-      status: row.status === "RESOLVED" ? "RESOLVED" : "ESCALATED",
+      status: row.status === "RESOLVED" ? "RESOLVED" : row.status === "OPEN" ? "OPEN" : "ESCALATED",
       reason: row.reason,
       decision: (row.decision ?? undefined) as AdminEscalatedInspection["decision"],
       decisionNotes: (row.decisionNotes ?? undefined) as AdminEscalatedInspection["decisionNotes"],

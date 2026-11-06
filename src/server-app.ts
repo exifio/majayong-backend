@@ -21,6 +21,7 @@ import { createDraftCatalogAdapter } from "./integration/draft-catalog-adapter.j
 import { createCatalogAdminPort } from "./integration/catalog-admin-port.js";
 import { createSupabaseStorageAdapter } from "./integration/supabase-storage.js";
 import { createTossSandboxVerifier } from "./integration/toss-verifier.js";
+import { createPasswordResetMailerFromEnv } from "./integration/mail.js";
 import { createOpenAiCatalogBlockGenerator, createOpenAiCatalogFeatureExtractor } from "./modules/catalog/index.js";
 import { createProjectSearchPort } from "./modules/market/project-search.js";
 import { runProjectDeadlineBatch } from "./modules/project/service.js";
@@ -92,6 +93,11 @@ export function createServerApp(): ServerApp {
       })
     : undefined;
   const integrationDb = createPrismaIntegrationDb(db);
+  const passwordResetMailer = createPasswordResetMailerFromEnv();
+  const sendPasswordReset =
+    passwordResetMailer === undefined
+      ? undefined
+      : (email: string, token: string) => passwordResetMailer.sendPasswordReset(email, token);
   const publicPorts = createPublicProjectPorts(
     integrationDb,
     createProjectCandidatePort(createProjectCandidateDb(db)),
@@ -177,6 +183,7 @@ export function createServerApp(): ServerApp {
     db,
     tokenSecret,
     google,
+    ...(sendPasswordReset === undefined ? {} : { sendPasswordReset }),
     projectDisclosureConsentVersion: () => process.env.PROJECT_DISCLOSURE_CONSENT_VERSION ?? null,
     project: projectPorts,
     draft: {

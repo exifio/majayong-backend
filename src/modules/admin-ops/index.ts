@@ -34,7 +34,7 @@ export interface AdminEscalatedInspection {
   id: string;
   contractItemId: string;
   deliveryId: string;
-  status: "ESCALATED" | "RESOLVED";
+  status: "ESCALATED" | "OPEN" | "RESOLVED";
   reason: string;
   decision?: "REWORK_VALID" | "APPROVE" | "UNDECIDED_CONDITION";
   decisionNotes?: { client: string; supplier: string };
@@ -409,7 +409,8 @@ export class AdminOpsService {
 
     const wasResolved = inspection.status === "RESOLVED";
     const updated = await this.repo.updateInspection(inspection.id, {
-      status: "RESOLVED",
+      // REWORK_VALID는 납품 도메인과 같이 다시 '보완 진행'으로 남겨야 재납품할 수 있다.
+      status: input.decision === "REWORK_VALID" ? "OPEN" : "RESOLVED",
       decision: input.decision,
       decisionNotes: input.decisionNotes,
     });

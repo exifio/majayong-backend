@@ -48,6 +48,7 @@
 | Method | Path | 성공 | 성공 DTO |
 |---|---|---|---|
 | POST | `/contracts/{contractId}/deposits` | 201 | `{ deposit: EscrowDeposit, isNew: boolean }` |
+| POST | `/contracts/{contractId}/deposits/{depositId}/confirm` | 200 | `{ deposit, contract, installments }` — PG 승인 확인 후 완료 |
 | GET | `/contracts/{contractId}/deposits` | 200 | `EscrowDeposit[]` |
 | GET | `/me/payment-statements` | 200 | `{ simulated, transferNote, statements }` |
 | GET | `/contracts/{contractId}/statement` | 200 | `ClientStatementView \| SupplierStatementView` |
@@ -83,8 +84,10 @@
 
 ## Webhook 예외
 
-`POST /integrations/toss/payment-events`는 외부 PG 프로토콜이므로 공통 봉투를 적용하지 않는다. 기존처럼 서비스 결과 body와 status를 그대로 반환하고, 인증은 `x-toss-webhook-secret` 서버 비밀키로 검증한다. 비밀키가 없거나 일치하지 않으면 401이다.
+`POST /integrations/toss/payment-events`는 외부 PG 프로토콜이므로 공통 봉투를 적용하지 않는다. `PAYMENT_STATUS_CHANGED`를 수신하면 [Toss signature 규격](https://docs.tosspayments.com/reference/using-api/webhook-events)에 따라 원문 body와 `tosspayments-webhook-transmission-time`으로 `tosspayments-webhook-signature`의 v1 HMAC-SHA256을 검증한 뒤 정규화한다. 키는 Toss API 개별 연동의 보안 키(`TOSS_WEBHOOK_SECRET`, 64자리 hex)이며, 누락·불일치 서명은 401이다. 결제 완료는 서버 PG GET 결과가 저장된 orderId/paymentKey/금액과 일치할 때만 처리한다. 명시적 불일치는 HELD, 일시적인 PG 조회 장애나 조회 어댑터 부재는 HTTP 503과 PENDING으로 남겨 Toss 재전송을 허용한다. 자동 재전송은 Toss의 [웹훅 재시도 정책](https://docs.tosspayments.com/guides/v2/webhook)을 사용한다. 누락된 웹훅은 기존 due-job scheduler가 15분 age bucket의 PENDING 주문을 `GET /v1/payments/orders/{orderId}`로 확인해 복구한다. 주문 조회는 API 개별 `test_sk`/`live_sk`가 필요하고, 결제 없음은 PENDING 유지·DONE이 아닌 결과는 건너뛰며, 식별자/금액 불일치는 HELD다. scheduler 비활성 환경에서는 이 배치가 실행되지 않는다.
 
 ## 예치 상태
 
 `EscrowDeposit.status`: `PENDING | HELD | COMPLETED | FAILED`(스키마 enum 기준). `POST /contracts/{id}/deposits`의 201은 **결제 요청 생성**이며 완료가 아니다. 실제 완료는 검증된 PG 콜백/재조회 후 `COMPLETED`로 바뀌고, 그 시점에 계약 `paymentStatus`/`totalDeposited`와 다른 보류 지원자 자동 거절이 갱신된다.
+
+`POST /contracts/{contractId}/deposits/{depositId}/confirm`(D-25)은 Toss SDK 성공 리다이렉트 뒤 서버가 `POST /v1/payments/confirm`으로 승인을 확인하는 경로다. body는 `{ paymentKey, amount }`이며, `amount`는 서버에 저장된 예치 금액과 일치해야 한다. `PENDING` 예치만 대상이고 `HELD`는 운영자 판정 전용이다. 같은 `paymentKey` 재요청은 200 멱등, 완료 후 다른 키는 409다. 일시적인 PG 승인/재조회 실패는 `503 PG_UNAVAILABLE`로 예치를 `PENDING`에 유지해 재시도할 수 있고, 확인된 PG 근거가 없거나 불일치하면 `422 PAYMENT_VERIFICATION_FAILED`로 완료하지 않는다. `VITE_ENABLE_DEPOSIT`는 PAY-01~06 검증 전까지 OFF다.

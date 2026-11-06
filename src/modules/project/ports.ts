@@ -1,6 +1,7 @@
 import { Prisma, ProjectStatus, type PrismaClient } from "@prisma/client";
 import { DraftError } from "../draft/rules.js";
 import type { ProjectSpecVersion } from "../market/public-project.js";
+import type { ProjectSort } from "../market/project-search.js";
 
 export type ProjectTx = Prisma.TransactionClient;
 
@@ -15,7 +16,9 @@ export type ProjectSearchQuery = {
     minBudget?: number;
     maxBudget?: number;
     deadlineBefore?: Date;
+    keyword?: string;
   };
+  sort?: ProjectSort;
   page: number;
   pageSize: 10;
 };

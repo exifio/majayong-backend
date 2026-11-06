@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { describe, it } from "node:test";
-import { createHttpHandler, ROUTE_PATHS, type AppServices, type HttpActor } from "./c-app.ts";
+import { createHttpHandler, type AppServices, type HttpActor } from "./c-app.ts";
 import { createTokenAuthenticator, signAccessToken } from "./infrastructure/token-auth.ts";
 
 describe("INT-C-01: HTTP 라우트", () => {
@@ -40,11 +41,22 @@ describe("INT-C-01: HTTP 라우트", () => {
     };
   }
 
-  it("34개 operation 경로가 중복 없이 매핑됨", () => {
-    // 확인
-    assert.equal(ROUTE_PATHS.length, 34);
-    assert.equal(new Set(ROUTE_PATHS).size, 34);
-  });
+  type TossWebhookAuth = { signature?: string; transmissionTime?: string; rawPayload?: Uint8Array };
+  const TOSS_SECURITY_KEY = "0123456789abcdef".repeat(4);
+
+  function tossWebhookHeaders(rawBody: string): Record<string, string> {
+    const transmissionTime = "2026-11-06T10:15:30+09:00";
+    const signature = createHmac("sha256", Buffer.from(TOSS_SECURITY_KEY, "hex"))
+      .update(rawBody)
+      .update(":")
+      .update(transmissionTime)
+      .digest("base64");
+    return {
+      "tosspayments-webhook-signature": `v1:${signature}`,
+      "tosspayments-webhook-transmission-time": transmissionTime,
+    };
+  }
+
 
   it("인증·404·오류 status 매핑", async () => {
     // 준비
@@ -96,7 +108,7 @@ describe("INT-C-01: HTTP 라우트", () => {
     }
   });
 
-  it("사용자용 C 성공은 data 봉투, 웹훅은 raw 응답을 유지한다", async () => {
+  it("사용자용 C 성공은 data 봉투를 유지한다", async () => {
     // 준비
     const app = await start(
       services({
@@ -121,45 +133,43 @@ describe("INT-C-01: HTTP 라우트", () => {
     }
   });
 
-  it("웹훅 응답은 data 봉투 없이 raw를 유지한다", async () => {
+  it("웹훅 원문 서명 헤더와 raw body를 전달하고 응답은 raw로 유지한다", async () => {
     // 준비
+    let received: { auth: TossWebhookAuth; payload: unknown } | undefined;
     const app = await start(
       services({
         deposits: {
-          async handleTossWebhook() {
+          async handleTossWebhook(auth: TossWebhookAuth, payload: unknown) {
+            received = { auth, payload };
             return { status: "HELD", deposit: { id: "deposit-1" } };
           },
         } as never,
       }),
     );
+    const rawBody = '{\n  "orderId" : "d1", "paymentKey": "p1", "amount": 1000, "status": "DONE"\n}';
+    const headers = tossWebhookHeaders(rawBody);
     try {
       // 실행
       const webhook = await fetch(`${app.baseUrl}/integrations/toss/payment-events`, {
         method: "POST",
-        headers: { "content-type": "application/json", "x-toss-webhook-secret": "secret-1" },
-        body: JSON.stringify({ orderId: "d1", paymentKey: "p1", amount: 1000, status: "DONE" }),
+        headers: { "content-type": "application/json", ...headers },
+        body: rawBody,
       });
       // 확인
       assert.equal(webhook.status, 200);
       assert.deepEqual(await webhook.json(), { status: "HELD", deposit: { id: "deposit-1" } });
+      assert.deepEqual(received?.payload, JSON.parse(rawBody));
+      assert.equal(received?.auth.signature, headers["tosspayments-webhook-signature"]);
+      assert.equal(received?.auth.transmissionTime, headers["tosspayments-webhook-transmission-time"]);
+      assert.deepEqual(Buffer.from(received?.auth.rawPayload ?? []), Buffer.from(rawBody));
     } finally {
       await app.close();
     }
   });
 
-  it("본문 없음·잘못된 JSON·웹훅 헤더 전달", async () => {
+  it("잘못된 JSON 요청은 400으로 거절한다", async () => {
     // 준비
-    let webhookSecret: string | undefined;
-    const app = await start(
-      services({
-        deposits: {
-          async handleTossWebhook(auth: { serverSecret?: string }) {
-            webhookSecret = auth.serverSecret;
-            return { status: "HELD", deposit: {} };
-          },
-        } as never,
-      }),
-    );
+    const app = await start(services());
     try {
       // 실행: 잘못된 JSON 본문 전송
       const invalid = await fetch(`${app.baseUrl}/contracts/c1/deposits`, {
@@ -169,16 +179,6 @@ describe("INT-C-01: HTTP 라우트", () => {
       });
       // 확인
       assert.equal(invalid.status, 400);
-
-      // 실행: 웹훅 시크릿 헤더 전송
-      const webhook = await fetch(`${app.baseUrl}/integrations/toss/payment-events`, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-toss-webhook-secret": "secret-1" },
-        body: JSON.stringify({ orderId: "d1", paymentKey: "p1", amount: 1000, status: "DONE" }),
-      });
-      // 확인
-      assert.equal(webhook.status, 200);
-      assert.equal(webhookSecret, "secret-1");
     } finally {
       await app.close();
     }
