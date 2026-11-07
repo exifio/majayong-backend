@@ -15,6 +15,7 @@ import type {
   AdminBlock,
   AdminHeldDeposit,
   AdminEscalatedInspection,
+  AdminEscalatedInspectionDetail,
   AdminCancellationContract,
   EventLogEntity,
 } from "../../../src/modules/admin-ops/index.ts";
@@ -199,7 +200,7 @@ export function createSharedStore(seed: SharedContractSeed) {
   const eventLogs: EventLogEntity[] = [];
   const blocks = new Map<string, AdminBlock>();
   const heldDeposits = new Map<string, AdminHeldDeposit>();
-  const adminInspections = new Map<string, AdminEscalatedInspection>();
+  const adminInspections = new Map<string, AdminEscalatedInspectionDetail>();
   const cancellationQueue = new Map<string, AdminCancellationContract>();
 
   const getContract = async (id: string) => contracts.get(id) ?? null;
@@ -598,7 +599,24 @@ export function createSharedStore(seed: SharedContractSeed) {
       heldDeposits.set(deposit.id, { ...deposit });
     },
     seedEscalatedInspection(inspection) {
-      adminInspections.set(inspection.id, { ...inspection });
+      adminInspections.set(inspection.id, {
+        ...inspection,
+        contractId: "",
+        projectTitle: "",
+        itemTitle: "",
+        itemDescription: "",
+        clientName: null,
+        supplierName: null,
+        agreedAmount: 0,
+        clientFee: 0,
+        interimRatio: 50,
+        conditions: [],
+        escalation: null,
+        history: [],
+        delivery: null,
+        createdAt: new Date(0),
+        resolvedAt: null,
+      });
     },
     seedCancellationQueueContract(entry) {
       cancellationQueue.set(entry.id, { ...entry });

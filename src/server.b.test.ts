@@ -89,7 +89,7 @@ function prismaPorts(): BPrismaPorts {
         count: unused,
       },
       eventLog: { create: unused },
-      notification: notificationTx,
+      notification: notificationDelegate,
       $transaction: unused,
     },
     support: {
@@ -101,6 +101,7 @@ function prismaPorts(): BPrismaPorts {
       },
       contract: { findFirst: unused },
       eventLog: { create: unused },
+      fileAttachment: { updateMany: unused },
       notification: notificationTx,
       $transaction: unused,
     },
