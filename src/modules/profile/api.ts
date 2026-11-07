@@ -238,8 +238,8 @@ export function mountProfileApi(router: Router, db: PrismaClient, ports: Profile
         const nextName = profileData.businessName === undefined ? existing?.businessName : profileData.businessName;
         await tx.clientProfile.upsert({
           where: { userId: actor.userId },
-          create: { userId: actor.userId, ...profileData, profileCompleted: typeof nextName === "string" && !!nextName.trim() } as Prisma.ClientProfileUncheckedCreateInput,
-          update: { ...profileData, profileCompleted: typeof nextName === "string" && !!nextName.trim() },
+          create: { userId: actor.userId, ...profileData, profileCompleted: typeof nextName === "string" && nextName.trim().length > 0 } as Prisma.ClientProfileUncheckedCreateInput,
+          update: { ...profileData, profileCompleted: typeof nextName === "string" && nextName.trim().length > 0 },
         });
       }
     });
@@ -494,7 +494,7 @@ export function mountProfileApi(router: Router, db: PrismaClient, ports: Profile
       include: { user: { select: { id: true, name: true, profileImageUrl: true, bio: true, createdAt: true, withdrawnAt: true } } },
     });
     if (!row || row.user.withdrawnAt) throw new ProfileError("SUPPLIER_PROFILE_NOT_FOUND", 404);
-    const published = row.portfolioSummaryStatus === PortfolioSummaryStatus.PUBLISHED && !!row.portfolioConsentAt;
+    const published = row.portfolioSummaryStatus === PortfolioSummaryStatus.PUBLISHED && row.portfolioConsentAt !== null;
     const items: Array<{ type: "LINK" | "FILE"; title?: string; url: string }> = [];
     if (published) {
       for (const item of storedPortfolioItems(row.portfolioItems, supplierId)) {
