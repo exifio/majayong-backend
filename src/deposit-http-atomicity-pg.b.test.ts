@@ -654,27 +654,29 @@ describe("INT-G2-03: C HTTP 예치 확정 원자성", { skip: hasDatabase ? fals
     }
   });
 
-  it("서명 누락·금액 불일치·기한 경과는 완료 없이 401/HELD로 격리한다", async () => {
+  it("서명 누락은 PG 재조회 후 완료하고 금액 불일치·기한 경과는 격리한다", async () => {
     // 준비
     const prisma = new PrismaClient();
     const ids = await seed(prisma);
+    const unsignedIds = await seed(prisma);
     try {
       // 실행
-      const forged = await start(prisma, ids);
+      const forged = await start(prisma, unsignedIds);
       try {
-        const { depositId } = await openDeposit(forged.baseUrl, ids);
+        const { depositId } = await openDeposit(forged.baseUrl, unsignedIds);
         const unsigned = await post(
           `${forged.baseUrl}/integrations/toss/payment-events`,
           { orderId: depositId, paymentKey: "pk", amount: 3_255_000, status: "DONE" },
         );
         // 확인
-        assert.equal(unsigned.status, 401);
+        assert.equal(unsigned.status, 200);
         assert.equal(
           (await prisma.escrowDeposit.findUniqueOrThrow({ where: { id: depositId } })).status,
-          "PENDING",
+          "COMPLETED",
         );
       } finally {
         await forged.close();
+        await cleanup(prisma, unsignedIds);
       }
 
       // 실행
