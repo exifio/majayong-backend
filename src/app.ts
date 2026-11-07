@@ -422,8 +422,12 @@ export function createApp(options: AppOptions): Express {
     const requestId = String(res.locals.requestId);
     res.status(404).json(errorResponse("NOT_FOUND", "경로를 찾을 수 없습니다.", requestId));
   });
-  const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
+  const errorHandler: ErrorRequestHandler = (error, req, res, _next) => {
     const result = statusFor(error);
+    if (result.status >= 500) {
+      // 배포 로그로 5xx 원인을 추적한다. body·헤더·쿼리는 개인정보가 될 수 있어 남기지 않는다.
+      console.error(`[${String(res.locals.requestId)}] ${req.method} ${req.originalUrl ?? req.url}`, error);
+    }
     res.status(result.status).json(errorResponse(result.code, result.message, String(res.locals.requestId)));
   };
   app.use(errorHandler);

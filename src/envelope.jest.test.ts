@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it } from "@jest/globals";
+import { afterAll, describe, expect, it, jest } from "@jest/globals";
 import { createServer, type Server } from "node:http";
 import { Router } from "express";
 import type { AddressInfo } from "node:net";
@@ -81,6 +81,35 @@ describe("G3-02: 공통 오류 봉투", () => {
     expect(res.status).toBe(418);
     expect(reached).toBe(true);
     expect(capturedRawBody).toEqual(Buffer.from(rawBody));
+  });
+
+  it("처리되지 않은 500 오류는 요청 ID와 경로를 남긴다", async () => {
+    // 준비: 예외를 던지는 라우터를 붙인 앱과 console.error 기록
+    const logged: unknown[][] = [];
+    const spy = jest.spyOn(console, "error").mockImplementation((...args: unknown[]) => { logged.push(args); });
+    try {
+      const router = Router();
+      router.get("/internal/jobs/run", () => { throw new Error("boom"); });
+      const baseUrl = await listen(createServer(createApp({
+        db: {} as unknown as PrismaClient,
+        tokenSecret,
+        routers: [router],
+      })));
+
+      // 실행: 인증 없이 열린 경로에서 처리되지 않은 예외가 나는 요청
+      const res = await fetch(`${baseUrl}/api/v1/internal/jobs/run`);
+      const body = (await res.json()) as { error?: { code?: string; requestId?: string } };
+
+      // 확인: 500 봉투를 유지하고 요청 ID·경로가 로그에 남는다
+      expect(res.status).toBe(500);
+      expect(body.error?.code).toBe("INTERNAL_ERROR");
+      expect(logged).toHaveLength(1);
+      expect(String(logged[0]?.[0])).toContain("GET /api/v1/internal/jobs/run");
+      expect(String(logged[0]?.[0])).toContain(String(body.error?.requestId));
+      expect(logged[0]?.[1]).toBeInstanceOf(Error);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("단독 C 핸들러도 공통 404 봉투를 쓴다", async () => {

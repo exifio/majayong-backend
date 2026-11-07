@@ -473,6 +473,10 @@ export function createHttpHandler(options: AppOptions) {
       const rawStatus = (err as { status?: unknown } | null)?.status;
       const status = typeof rawStatus === "number" ? rawStatus : 500;
       const rawMessage = err instanceof Error ? err.message : "INTERNAL_ERROR";
+      if (status >= 500) {
+        // C 라우트의 5xx를 배포 로그에서 찾을 수 있게 요청 ID·경로만 남긴다.
+        console.error(`[${requestId}] ${req.method} ${url.pathname}`, err);
+      }
       if (isWebhook) {
         // Toss webhook은 외부 PG 프로토콜이므로 공통 봉투를 적용하지 않는다.
         writeJson(res, status, { message: status >= 500 ? "INTERNAL_ERROR" : rawMessage }, requestId);
