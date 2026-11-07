@@ -79,7 +79,9 @@ export function createServerApp(): ServerApp {
       }
     : undefined;
 
-  const db = new PrismaClient();
+  // Lambda 콜드스타트·풀러 지연에서 Prisma 기본값(maxWait 2s/timeout 5s)을 넘겨 간헐 P2028 → 500이 난다.
+  // 계약 tx(`contract/prisma-adapter.ts`)와 같은 예산을 전역 기본값으로 둔다.
+  const db = new PrismaClient({ transactionOptions: { maxWait: 10_000, timeout: 15_000 } });
   const now = () => new Date();
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
