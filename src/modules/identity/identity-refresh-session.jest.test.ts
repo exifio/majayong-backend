@@ -52,7 +52,7 @@ describe("A-01 회전 리프레시 세션", () => {
     });
   });
 
-  it("리프레시 토큰을 회전하고 패밀리를 폐기해 재사용을 거부한다", async () => {
+  it("짧은 유예 동안 중복 리프레시를 같은 토큰으로 응답하고 유예 후 재사용을 폐기한다", async () => {
     await withUser(async userId => {
       // 준비
       const original = await createSessionTokens(prisma, userId, secret, now);
@@ -65,12 +65,17 @@ describe("A-01 회전 리프레시 세션", () => {
       expect(oldSession?.replacedById).toBe(currentSession?.id);
       expect(currentSession?.familyId).toBe(oldSession?.familyId);
       expect(currentSession?.expiresAt.getTime()).toBe(original.refreshExpiresAt);
+      expect(currentSession?.tokenHash === hashToken(rotated.refreshToken)).toBe(true);
+      expect(currentSession?.tokenHash !== rotated.refreshToken).toBe(true);
 
       // 실행 및 확인
-      await expect(rotateRefreshToken(prisma, original.refreshToken, secret, new Date(now.getTime() + 2_000)))
-        .rejects.toMatchObject({ code: "REFRESH_TOKEN_REUSED" });
+      const replayed = await rotateRefreshToken(prisma, original.refreshToken, secret, new Date(now.getTime() + 2_000));
+      expect(replayed.refreshToken === rotated.refreshToken).toBe(true);
 
       // 확인
+      expect(await prisma.refreshSession.count({ where: { familyId: oldSession?.familyId, revokedAt: null } })).toBe(1);
+      await expect(rotateRefreshToken(prisma, original.refreshToken, secret, new Date(now.getTime() + 7_000)))
+        .rejects.toMatchObject({ code: "REFRESH_TOKEN_REUSED" });
       expect(await prisma.refreshSession.count({ where: { familyId: oldSession?.familyId, revokedAt: null } })).toBe(0);
     });
   });
@@ -108,7 +113,7 @@ describe("A-01 회전 리프레시 세션", () => {
     });
   });
 
-  it("동시 리프레시는 하나만 허용하고 재사용 시 승리한 패밀리를 폐기한다", async () => {
+  it("동시 리프레시는 같은 후속 토큰으로 응답하고 활성 세션 하나를 유지한다", async () => {
     await withUser(async userId => {
       // 준비
       const tokens = await createSessionTokens(prisma, userId, secret, now);
@@ -118,9 +123,10 @@ describe("A-01 회전 리프레시 세션", () => {
         rotateRefreshToken(prisma, tokens.refreshToken, secret, new Date(now.getTime() + 1_000)),
         rotateRefreshToken(prisma, tokens.refreshToken, secret, new Date(now.getTime() + 1_000)),
       ]);
-      expect(outcomes.filter(result => result.status === "fulfilled")).toHaveLength(1);
-      expect(outcomes.filter(result => result.status === "rejected")).toHaveLength(1);
-      expect(await prisma.refreshSession.count({ where: { userId, revokedAt: null } })).toBe(0);
+      const fulfilled = outcomes.filter(result => result.status === "fulfilled");
+      expect(fulfilled.length).toBe(2);
+      expect(fulfilled[0]?.value.refreshToken === fulfilled[1]?.value.refreshToken).toBe(true);
+      expect(await prisma.refreshSession.count({ where: { userId, revokedAt: null } })).toBe(1);
     });
   });
 });

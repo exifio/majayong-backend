@@ -118,8 +118,9 @@ describe("A-01 HTTP 인증 API", () => {
     });
   });
 
-  it("리프레시 토큰을 회전하고 재사용을 거부하며 로그아웃 시 활성 세션을 끝낸다", async () => {
-    await withServer({ db: prisma, tokenSecret: secret, now: () => now }, async baseUrl => {
+  it("짧은 유예 동안 중복 리프레시를 허용하고 이후 재사용을 폐기하며 로그아웃한다", async () => {
+    let testNow = now;
+    await withServer({ db: prisma, tokenSecret: secret, now: () => testNow }, async baseUrl => {
       // 준비
       const account = await register(baseUrl);
 
@@ -130,10 +131,20 @@ describe("A-01 HTTP 인증 API", () => {
 
       // 실행 및 확인
       const replay = await json(baseUrl, "/auth/refresh", { refreshToken: account.refreshToken });
-      expect(replay.status).toBe(401);
+      expect(replay.status).toBe(200);
+      const replayed = (await replay.json() as { data: { refreshToken: string } }).data.refreshToken;
+      expect(replayed === rotated).toBe(true);
       // 확인
       const current = await prisma.refreshSession.findUniqueOrThrow({ where: { tokenHash: (await import("node:crypto")).createHash("sha256").update(rotated).digest("hex") } });
-      expect(current.revokedAt).not.toBeNull();
+      expect(current.revokedAt).toBeNull();
+
+      // 실행 및 확인
+      testNow = new Date(now.getTime() + 6_000);
+      const expiredReplay = await json(baseUrl, "/auth/refresh", { refreshToken: account.refreshToken });
+      expect(expiredReplay.status).toBe(401);
+      // 확인
+      const revoked = await prisma.refreshSession.findUniqueOrThrow({ where: { id: current.id } });
+      expect(revoked.revokedAt).not.toBeNull();
 
       // 실행 및 확인
       const logout = await json(baseUrl, "/auth/logout", { refreshToken: rotated });
