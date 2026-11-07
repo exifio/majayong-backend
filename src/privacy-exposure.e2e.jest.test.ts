@@ -113,7 +113,7 @@ describe("E2E-12 개인정보와 보안", () => {
       headers: { authorization: `Bearer ${clientToken}`, "content-type": "application/json" },
       body: JSON.stringify({ entryType: "DEFAULT_DRAFT" }),
     });
-    const draftBody = await draftRes.json() as any;
+    const draftBody = await draftRes.json() as { data: { id: string } };
     // 확인: 초안이 생성된다
     expect(draftRes.status).toBe(201);
     const draftId = draftBody.data.id;
@@ -130,7 +130,7 @@ describe("E2E-12 개인정보와 보안", () => {
         deadline: "2026-11-10T09:00:00.000Z",
       }),
     });
-    const publishBody = await publishRes.json() as any;
+    const publishBody = await publishRes.json() as { data: { projectId: string } };
     // 확인: 프로젝트가 생성된다
     expect(publishRes.status).toBe(201);
     const projectId = publishBody.data.projectId;

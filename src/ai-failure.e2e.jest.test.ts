@@ -91,7 +91,7 @@ describe("E2E-11 AI 실패 안전성", () => {
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: JSON.stringify({ entryType: "SENTENCE", text: "예약 달력과 방문 인원 선택 기능이 필요합니다." }),
     });
-    const draftBody = await createDraft.json() as any;
+    const draftBody = await createDraft.json() as { data: { id: string; pendingFeatures: unknown[] } };
     // 확인: 초안이 만들어지고 대기 기능이 남는다
     expect(createDraft.status).toBe(201);
     draftIds.push(draftBody.data.id);
