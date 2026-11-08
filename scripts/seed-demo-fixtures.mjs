@@ -116,6 +116,14 @@ async function reset(db) {
   await db.specItem.deleteMany({ where: { projectId: { in: [IDS.a.project, IDS.b.project] } } });
   await db.project.deleteMany({ where: { id: { in: [IDS.a.project, IDS.b.project] } } });
   await db.draft.deleteMany({ where: { id: { in: [IDS.a.draft, IDS.b.draft] } } });
+  // 시연 계정으로 만든 다른 초안이 남아 있으면 사용자 삭제가 FK로 막힌다.
+  const ownedDrafts = await db.draft.findMany({ where: { clientId: { in: userIds } }, select: { id: true } });
+  const ownedDraftIds = ownedDrafts.map((draft) => draft.id);
+  if (ownedDraftIds.length > 0) {
+    await db.draftBlock.deleteMany({ where: { draftId: { in: ownedDraftIds } } });
+    await db.clientUtterance.deleteMany({ where: { draftId: { in: ownedDraftIds } } });
+    await db.draft.deleteMany({ where: { id: { in: ownedDraftIds } } });
+  }
   await db.clientProfile.deleteMany({ where: { userId: { in: [IDS.a.client, IDS.b.client, id('30')] } } });
   await db.supplierProfile.deleteMany({ where: { userId: { in: [...IDS.a.suppliers, IDS.b.supplier, id('31')] } } });
   await db.user.deleteMany({ where: { id: { in: userIds } } });
