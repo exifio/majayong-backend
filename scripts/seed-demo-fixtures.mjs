@@ -5,6 +5,8 @@
  * - A세트: 모집 중 프로젝트 1건, 지원 3건, 채팅 메시지.
  * - B세트: 예치 완료 계약 1건, 중간 납품 제출(검수 대기).
  * - PG 증거가 없는 B세트는 제목/납품 문구에 [DEMO]로 표시한다.
+ * - B세트 당사자는 A세트의 의뢰인·1번 공급자와 같은 사용자다. `db:seed:demo:accounts`를 실행하면
+ *   demo.client@majayong.local / demo.supplier@majayong.local 로그인으로 두 세트가 모두 보인다.
  * - 고정 ID와 demo 접두사만 쓰고, 실제/운영 데이터는 건드리지 않는다.
  * - 실행 DB는 로컬의 *_test/_check/_staging 이거나 ALLOW_DEMO_SEED=1이어야 한다.
  *
@@ -34,8 +36,9 @@ const IDS = {
     messages: [id('21'), id('22')],
   },
   b: {
-    client: id('30'),
-    supplier: id('31'),
+    // 시연 계정 하나로 A·B 두 세트를 모두 보도록 B의 당사자는 A의 의뢰인·1번 공급자와 같은 사용자다.
+    client: id('10'),
+    supplier: id('11'),
     draft: id('32'),
     project: id('33'),
     application: id('34'),
@@ -90,13 +93,14 @@ function summary(db) {
       contractItems: 2,
       deliveries: 1,
     },
-    users: 1 + IDS.a.suppliers.length + 2,
+    users: 1 + IDS.a.suppliers.length,
   };
 }
 
 async function reset(db) {
   const applicationIds = [...IDS.a.applications, IDS.b.application];
-  const userIds = [IDS.a.client, ...IDS.a.suppliers, IDS.b.client, IDS.b.supplier];
+  // id('30')/id('31')은 B세트가 별도 사용자였던 이전 시드의 잔여물이다.
+  const userIds = [IDS.a.client, ...IDS.a.suppliers, IDS.b.client, IDS.b.supplier, id('30'), id('31')];
   const installmentIds = [IDS.b.interim, IDS.b.final];
   const contractItemIds = [IDS.b.interimItem, IDS.b.finalItem];
 
@@ -112,8 +116,8 @@ async function reset(db) {
   await db.specItem.deleteMany({ where: { projectId: { in: [IDS.a.project, IDS.b.project] } } });
   await db.project.deleteMany({ where: { id: { in: [IDS.a.project, IDS.b.project] } } });
   await db.draft.deleteMany({ where: { id: { in: [IDS.a.draft, IDS.b.draft] } } });
-  await db.clientProfile.deleteMany({ where: { userId: { in: [IDS.a.client, IDS.b.client] } } });
-  await db.supplierProfile.deleteMany({ where: { userId: { in: [...IDS.a.suppliers, IDS.b.supplier] } } });
+  await db.clientProfile.deleteMany({ where: { userId: { in: [IDS.a.client, IDS.b.client, id('30')] } } });
+  await db.supplierProfile.deleteMany({ where: { userId: { in: [...IDS.a.suppliers, IDS.b.supplier, id('31')] } } });
   await db.user.deleteMany({ where: { id: { in: userIds } } });
   await db.blockCatalog.deleteMany({ where: { id: IDS.block } });
 }
@@ -134,8 +138,8 @@ async function seed(db) {
 
   await db.user.upsert({
     where: { id: IDS.a.client },
-    update: { email: 'demo0806-a-client@example.invalid', role: 'CLIENT' },
-    create: { id: IDS.a.client, email: 'demo0806-a-client@example.invalid', role: 'CLIENT', name: '[DEMO] 의뢰인 A' },
+    update: { email: 'demo.client@majayong.local', role: 'CLIENT' },
+    create: { id: IDS.a.client, email: 'demo.client@majayong.local', role: 'CLIENT', name: '[DEMO] 의뢰인 A' },
   });
   await db.clientProfile.upsert({
     where: { userId: IDS.a.client },
@@ -143,15 +147,17 @@ async function seed(db) {
     create: { userId: IDS.a.client, businessName: '[DEMO] 카페 A', profileCompleted: true },
   });
   for (const [index, supplierId] of IDS.a.suppliers.entries()) {
+    // 1번 공급자는 B세트 계약의 당사자이기도 하므로 시연 로그인 계정 이메일을 쓴다.
+    const email = index === 0 ? 'demo.supplier@majayong.local' : `demo0806-a-supplier-${index + 1}@example.invalid`;
     await db.user.upsert({
       where: { id: supplierId },
-      update: { email: `demo0806-a-supplier-${index + 1}@example.invalid`, role: 'SUPPLIER' },
-      create: { id: supplierId, email: `demo0806-a-supplier-${index + 1}@example.invalid`, role: 'SUPPLIER', name: `[DEMO] 공급자 A${index + 1}` },
+      update: { email, role: 'SUPPLIER' },
+      create: { id: supplierId, email, role: 'SUPPLIER', name: `[DEMO] 공급자 A${index + 1}` },
     });
     await db.supplierProfile.upsert({
       where: { userId: supplierId },
-      update: { displayName: `[DEMO] 공급자 A${index + 1}`, ndaAgreedAt: NOW, ndaVersion: 'demo-nda' },
-      create: { userId: supplierId, displayName: `[DEMO] 공급자 A${index + 1}`, industryCodes: [], skills: [], ndaAgreedAt: NOW, ndaVersion: 'demo-nda' },
+      update: { displayName: `[DEMO] 공급자 A${index + 1}`, ndaAgreedAt: NOW, ndaVersion: 'demo-nda', payoutVerifiedAt: NOW },
+      create: { userId: supplierId, displayName: `[DEMO] 공급자 A${index + 1}`, industryCodes: [], skills: [], ndaAgreedAt: NOW, ndaVersion: 'demo-nda', payoutVerifiedAt: NOW },
     });
   }
   await db.draft.upsert({
@@ -220,26 +226,6 @@ async function seed(db) {
     await db.applicationMessage.upsert({ where: { id: messageId }, update: data, create: data });
   }
 
-  await db.user.upsert({
-    where: { id: IDS.b.client },
-    update: { email: 'demo0806-b-client@example.invalid', role: 'CLIENT' },
-    create: { id: IDS.b.client, email: 'demo0806-b-client@example.invalid', role: 'CLIENT', name: '[DEMO] 의뢰인 B' },
-  });
-  await db.clientProfile.upsert({
-    where: { userId: IDS.b.client },
-    update: { businessName: '[DEMO] 카페 B', profileCompleted: true },
-    create: { userId: IDS.b.client, businessName: '[DEMO] 카페 B', profileCompleted: true },
-  });
-  await db.user.upsert({
-    where: { id: IDS.b.supplier },
-    update: { email: 'demo0806-b-supplier@example.invalid', role: 'SUPPLIER' },
-    create: { id: IDS.b.supplier, email: 'demo0806-b-supplier@example.invalid', role: 'SUPPLIER', name: '[DEMO] 공급자 B' },
-  });
-  await db.supplierProfile.upsert({
-    where: { userId: IDS.b.supplier },
-    update: { displayName: '[DEMO] 공급자 B', ndaAgreedAt: NOW, ndaVersion: 'demo-nda', payoutVerifiedAt: NOW },
-    create: { userId: IDS.b.supplier, displayName: '[DEMO] 공급자 B', industryCodes: [], skills: [], ndaAgreedAt: NOW, ndaVersion: 'demo-nda', payoutVerifiedAt: NOW },
-  });
   await db.draft.upsert({
     where: { id: IDS.b.draft },
     update: { clientId: IDS.b.client, entryType: 'SENTENCE' },

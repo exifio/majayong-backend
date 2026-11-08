@@ -18,6 +18,7 @@
     "db:migrate:production": "node --env-file=.env scripts/migrate-production.mjs",
     "db:seed:staging": "node scripts/seed-staging.mjs",
     "db:seed:demo": "node scripts/seed-demo-fixtures.mjs",
+    "db:seed:demo:accounts": "node scripts/seed-demo-accounts.mjs",
     "db:verify:b": "node scripts/verify-b-pg.mjs",
     "test:a": "jest --runInBand",
     "test:b": "DATABASE_URL=\"${DATABASE_URL:-}\" node --import ./tests/b/resolve-ts.mjs --test $(find src openapi -name '*.b.test.ts')",

@@ -15,13 +15,15 @@
 
 처음에는 AGENTS와 이 파일을 읽고, PRD → DESIGN → PLAN → TASKS에서 작업 ID를 고른다. 이후에는 그 작업에 필요한 절과 코드/계약만 확인한다. 현재 브랜치·HEAD·배포 상태는 작업 시작 시 직접 확인한다.
 
+> `docs/`와 `AGENTS.md`는 내부 작업 기록이라 공유 승인 전에는 Git에 올리지 않는다(AGENTS §6). 그래서 원격 저장소를 clone하면 위 링크가 404일 수 있다. 진행 상태는 로컬 작업 트리의 `docs/TASKS.md`가 기준이다.
+
 ## 반영한 입력과 시작 순서
 
 2026-11-05 전달된 v0.7.3 문서 12개의 요구사항·디자인 분류·33개 티켓을 위 6개 문서에 통합했다. 기본/분리 작업표는 같은 ID의 다른 보기이므로 TASKS 하나만 갱신한다. 원본과 적용 차이는 [입력·보관 기록](docs/old/2026-11-05-v0.7.3-import/ARCHIVE.md)에 있다.
 
 이 저장소에서는 TASKS의 BE 티켓을 선택한다. FE 티켓은 실제 FE 저장소에서, 공동 계약·실HTTP 검증은 Integration 범위에서 진행한다. 첫 순서는 INT-00 → BE-00/FE-00 → BE-01 → FE-01/02다. 문의와 PG의 선후 관계는 PLAN을 따른다. 이번 반영은 문서 작업이며 33개 기능 티켓은 완료 처리하지 않았다.
 
-입력 문서는 FE f9427a9 / BE a188fb2 / 디자인 4360783을 기준으로 한다. 이번 로컬 BE는 main@3601095이고, 이웃 FE 폴더는 Git 메타데이터 없는 사본이다. API v1.0.1은 더 이전 FE 97c9112를 참조한다. 배포 버전은 별도로 확인해야 한다.
+입력 문서는 FE f9427a9 / BE a188fb2 / 디자인 4360783을 기준으로 한다. 이번 확인 시점의 로컬 BE는 main@2dedfa2, 이웃 FE는 main@aaa93ae다(2026-11-08). API v1.0.1은 더 이전 FE 97c9112를 참조한다. 배포 버전은 별도로 확인해야 한다.
 
 ## 로컬 실행
 
@@ -35,7 +37,7 @@ npm run dev
 
 `dev`는 빌드 후 `.env`를 로드해 서버를 실행한다. `npm start`는 빌드된 `dist/index.js`를 실행하며 환경 변수는 실행 환경에서 전달한다. `PORT` 기본값은 3000이다. 마이그레이션은 [DESIGN의 DB 이전 절](docs/DESIGN.md#4-db-이전과-보안)을 읽고 대상/기존 데이터/승인을 확인한 뒤 별도로 수행한다.
 
-데모/시연 fixture는 `npm run db:seed:demo -- --dry-run`으로 계획만 확인하고, 로컬 `*_test`/`*_check`/`*_staging` DB에서만 `--reset`으로 A(모집·지원3·채팅)/B(예치·납품) 세트를 만들거나 지운다. 운영·공유 DB는 guard가 거부하며 `ALLOW_DEMO_SEED=1` 없이는 실행되지 않는다.
+데모/시연 fixture는 `npm run db:seed:demo -- --dry-run`으로 계획만 확인하고, 로컬 `*_test`/`*_check`/`*_staging` DB에서만 `--reset`으로 A(모집·지원3·채팅)/B(예치·납품) 세트를 만들거나 지운다. 운영·공유 DB는 guard가 거부하며 `ALLOW_DEMO_SEED=1` 없이는 실행되지 않는다. 이어서 `npm run build` 후 `DEMO_PASSWORD=... npm run db:seed:demo:accounts`를 실행하면 `demo.client@majayong.local`·`demo.supplier@majayong.local`·`demo.admin@majayong.local`로 로그인할 수 있고, 앞의 두 계정은 A·B세트의 당사자라 시연 데이터가 그대로 보인다.
 
 ## 검사 명령
 
