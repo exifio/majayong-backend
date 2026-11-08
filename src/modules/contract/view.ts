@@ -3,10 +3,16 @@ import type { PrismaClient } from '@prisma/client';
 
 import type { ContractActor, ContractRecord } from './lifecycle.js';
 
+export interface ContractInstallmentProgress {
+  readonly stage: 'INTERIM' | 'FINAL';
+  readonly status: string;
+}
+
 export interface ContractPartyFields {
   readonly projectTitle: string | null;
   readonly counterpartName: string | null;
   readonly reviewWrittenByMe: boolean;
+  readonly installments: readonly ContractInstallmentProgress[];
 }
 
 export interface ContractViewPort {
@@ -39,7 +45,7 @@ export function createPrismaContractViewPort(db: PrismaClient): ContractViewPort
         ),
       ];
 
-      const [projects, reviews, suppliers, clients, users] = await Promise.all([
+      const [projects, reviews, suppliers, clients, users, installments] = await Promise.all([
         db.project.findMany({
           where: { id: { in: projectIds } },
           select: { id: true, title: true },
@@ -66,6 +72,11 @@ export function createPrismaContractViewPort(db: PrismaClient): ContractViewPort
               where: { id: { in: clientIds } },
               select: { id: true, name: true },
             }),
+        db.paymentInstallment.findMany({
+          where: { contractId: { in: contractIds } },
+          select: { contractId: true, stage: true, status: true },
+          orderBy: [{ contractId: 'asc' }, { stage: 'asc' }],
+        }),
       ]);
 
       const titleByProject = new Map(projects.map((project) => [project.id, project.title]));
@@ -75,6 +86,12 @@ export function createPrismaContractViewPort(db: PrismaClient): ContractViewPort
         clients.map((profile) => [profile.userId, profile.businessName]),
       );
       const userName = new Map(users.map((user) => [user.id, user.name]));
+      const installmentsByContract = new Map<string, ContractInstallmentProgress[]>();
+      for (const installment of installments) {
+        const rows = installmentsByContract.get(installment.contractId) ?? [];
+        rows.push({ stage: installment.stage, status: installment.status });
+        installmentsByContract.set(installment.contractId, rows);
+      }
 
       for (const contract of contracts) {
         const counterpartName =
@@ -87,6 +104,7 @@ export function createPrismaContractViewPort(db: PrismaClient): ContractViewPort
           projectTitle: titleByProject.get(contract.projectId) ?? null,
           counterpartName,
           reviewWrittenByMe: reviewed.has(contract.id),
+          installments: installmentsByContract.get(contract.id) ?? [],
         });
       }
       return result;

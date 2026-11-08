@@ -69,6 +69,7 @@ function viewOf(
     projectTitle: party?.projectTitle ?? null,
     counterpartName: party?.counterpartName ?? null,
     reviewWrittenByMe: party?.reviewWrittenByMe ?? false,
+    installments: party?.installments ?? [],
     // WORK_OVERDUE·INSPECTION_DUE는 납품/검수 데이터가 필요하므로 별도 API에서 판단한다.
     displayStatus: deriveContractDisplayStatus({
       status: contract.status,
