@@ -24,7 +24,7 @@ try {
 const userRef = parsed.username.split('.')[1] ?? '';
 const hostRef = /^db\.([a-z0-9]+)\.supabase\.co$/i.exec(parsed.hostname)?.[1] ?? '';
 const ref = userRef || hostRef;
-const expected = process.env.PRODUCTION_PROJECT_REF?.trim() || 'fynqcxfoylaljxmqumin';
+const expected = process.env.PRODUCTION_PROJECT_REF?.trim() || 'wgeoqlfpmwzgdhbkvytc'; // 2026-11-08 Supabase 화면 확인값
 if (ref !== expected) {
   console.error(`대상 project ref(${ref || '없음'})가 production(${expected})과 다릅니다.`);
   process.exit(1);
