@@ -381,9 +381,12 @@ export function createApp(options: AppOptions): Express {
     "/api/v1/integrations/toss/payment-events",
     "/api/v1/internal/jobs/run",
   ]);
+  // 프로필 이미지는 <img>가 Bearer 토큰을 보낼 수 없어 인증 없이 고정 경로를 연다.
+  const isPublicApiPath = (path: string) =>
+    PUBLIC_API_PATHS.has(path) || /^\/api\/v1\/uploads\/[^/]+\/avatar$/.test(path);
   for (const extra of options.routers ?? []) {
     app.use("/api/v1", (req, res, next) => {
-      if (PUBLIC_API_PATHS.has((req.originalUrl ?? "").split("?")[0] ?? "")) {
+      if (isPublicApiPath((req.originalUrl ?? "").split("?")[0] ?? "")) {
         next();
         return;
       }
