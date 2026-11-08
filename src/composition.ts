@@ -110,6 +110,14 @@ export function createIntegrationServices(config: IntegrationConfig) {
     inspectionPort: inspections,
     cancellationPort: cancellations,
     settlementPort: settlement,
+    countsPort: {
+      async reportsPending() {
+        return config.prisma.report.count({ where: { status: "OPEN" } });
+      },
+      async inquiriesWaiting() {
+        return config.prisma.supportInquiry.count({ where: { status: "WAITING" } });
+      },
+    },
     clock,
     transactionRunner: {
       run: (work) => config.prisma.$transaction((tx) => work(tx)),

@@ -11,6 +11,7 @@ import { ApplicationAccessError } from './dto.js';
 import type { ProjectSpecVersion } from '../market/public-project.js';
 import {
   getApplicationDetail,
+  listApplicationRevisions,
   listMyApplications,
   listProjectApplicationCards,
   type ApplicationReadPort,
@@ -143,6 +144,14 @@ export function createApplicationRouter(ports: ApplicationHttpPorts): Router {
       applicationId: request.params.applicationId as string,
     });
     sendData(response, revision);
+  });
+
+  router.get('/applications/:applicationId/revisions', async (request, response) => {
+    const rows = await listApplicationRevisions(ports.reads, {
+      actor: actorOf(request),
+      applicationId: request.params.applicationId as string,
+    });
+    sendData(response, rows);
   });
 
   router.post('/applications/:applicationId/withdraw', async (request, response) => {

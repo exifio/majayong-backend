@@ -13,6 +13,7 @@ import { emptyDraft, type AgreementCondition, type AgreementDraft, type Agreemen
 import { ApplicationError, type ApplicationRecord, type ApplicationStatus } from '../application/dto.js';
 import type { PaymentStatus } from './display-status.js';
 import type { ProjectStatus } from '../market/public-project.js';
+import { CONTRACT_ARTICLES, CONTRACT_ARTICLES_VERSION, type ContractArticle } from './terms.js';
 import { createNotificationOnceInTransaction, type NotificationTx } from '../notification/notifications.js';
 
 export type ContractDbStatus =
@@ -855,6 +856,10 @@ export interface ContractDocumentView {
   readonly depositAmount: number;
   readonly supplierPayout: number;
   readonly items: readonly ContractItemRecord[];
+  readonly articles: readonly ContractArticle[];
+  readonly articlesVersion: string;
+  /** 법률·세무 검토 전 초안임을 FE가 표시할 수 있게 한다. */
+  readonly articlesDraft: true;
 }
 
 /**
@@ -877,6 +882,9 @@ export function contractDocumentFor(
     depositAmount: contract.agreedAmount + contract.clientFee,
     supplierPayout: contract.agreedAmount - contract.supplierFee,
     items: contract.items,
+    articles: CONTRACT_ARTICLES,
+    articlesVersion: CONTRACT_ARTICLES_VERSION,
+    articlesDraft: true,
   };
 }
 

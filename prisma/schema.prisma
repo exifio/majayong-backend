@@ -377,6 +377,8 @@ model User {
   providerUserId      String? // 구글 연결 해제 시 NULL(비밀번호가 있어야 해제)
   profileImageUrl     String?
   bio                 String? // 자기소개 — 의뢰인은 상세 공개에 포함
+  /// 알림 카테고리별 수신 설정. NULL이면 기본값을 사용한다.
+  notificationSettings Json?
   termsVersion        String? // 이용약관 · 개인정보 · 중개자 고지 동의 버전
   termsAgreedAt       DateTime?
   chatRestrictedUntil DateTime? // 신고 조치 — 이 시각까지 채팅 읽기 전용

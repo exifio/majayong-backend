@@ -93,6 +93,9 @@ const ROUTES: Route[] = [
   route("GET", "/me/payment-statements", "user", async ({ actor }, s) => ({
     body: await s.settlement.getMyPaymentStatements(actor),
   })),
+  route("GET", "/me/settlements/summary", "user", async ({ actor }, s) => ({
+    body: await s.settlement.getMySettlementSummary(actor),
+  })),
   route("GET", "/contracts/:contractId/statement", "user", async ({ actor, params }, s) => ({
     body: await s.settlement.getContractStatement(actor, params.contractId),
   })),
@@ -183,6 +186,12 @@ const ROUTES: Route[] = [
   route("POST", "/contracts/:contractId/cancellation/withdraw", "user", async ({ actor, params }, s) => ({
     body: await s.cancellations.withdrawCancellation(actor, { contractId: params.contractId }),
   })),
+  route("GET", "/contracts/:contractId/inspection-summary", "user", async ({ actor, params }, s) => ({
+    body: await s.deliveries.getInspectionSummary(
+      { userId: actor.userId, role: actor.role },
+      params.contractId,
+    ),
+  })),
   route("POST", "/contracts/:contractId/reviews", "user", async ({ actor, params, body }, s) => ({
     status: 201,
     body: await s.reviews.createReview(actor, {
@@ -215,6 +224,9 @@ const ROUTES: Route[] = [
   })),
   route("GET", "/admin/blocks", "user", async ({ actor }, s) => ({
     body: await s.admin.listBlocks(actor),
+  })),
+  route("GET", "/admin/menu-counts", "user", async ({ actor }, s) => ({
+    body: await s.admin.menuCounts(actor),
   })),
   route("POST", "/admin/blocks/:blockId/actions", "user", async ({ actor, params, body }, s) => ({
     body: await s.admin.executeBlockAction(actor, params.blockId, {
@@ -251,6 +263,9 @@ const ROUTES: Route[] = [
   ),
   route("GET", "/admin/contracts/cancellation-queue", "user", async ({ actor }, s) => ({
     body: await s.admin.listCancellationQueue(actor),
+  })),
+  route("GET", "/admin/contracts/cancellation-history", "user", async ({ actor }, s) => ({
+    body: await s.admin.listCancellationHistory(actor),
   })),
   route("POST", "/admin/contracts/:contractId/cancellation/decide", "user", async ({ actor, params, body }, s) => ({
     body: await s.admin.decideCancellation(actor, params.contractId, {

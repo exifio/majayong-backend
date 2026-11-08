@@ -9,7 +9,7 @@ export class FileHttpError extends Error {
   }
 }
 
-export type FilePurpose = "DELIVERY" | "PORTFOLIO" | "SUPPORT_INQUIRY" | "CONTRACT_DOCUMENT";
+export type FilePurpose = "DELIVERY" | "PORTFOLIO" | "SUPPORT_INQUIRY" | "CONTRACT_DOCUMENT" | "PROFILE_IMAGE";
 
 export interface FileEntity {
   id: string;
@@ -112,6 +112,7 @@ const FILE_PURPOSES: readonly FilePurpose[] = [
   "PORTFOLIO",
   "SUPPORT_INQUIRY",
   "CONTRACT_DOCUMENT",
+  "PROFILE_IMAGE",
 ];
 
 export function sanitizeFileName(name: string): string {
@@ -198,6 +199,18 @@ export class FileService {
 
     if (input.purpose === "PORTFOLIO" && actor.role !== "SUPPLIER") {
       throw new FileHttpError(403, "포트폴리오 파일은 공급자만 업로드할 수 있습니다.");
+    }
+
+    if (input.purpose === "PROFILE_IMAGE") {
+      if (input.contractId !== undefined || input.inquiryId !== undefined) {
+        throw new FileHttpError(400, "프로필 이미지는 계약·문의 식별자를 붙일 수 없습니다.");
+      }
+      if (![".png", ".jpg", ".jpeg", ".webp"].includes(ext)) {
+        throw new FileHttpError(400, "프로필 이미지는 png·jpg·jpeg·webp만 허용합니다.");
+      }
+      if (input.fileSize > 5 * 1024 * 1024) {
+        throw new FileHttpError(400, "프로필 이미지는 5MB 이하만 허용합니다.");
+      }
     }
 
     if (input.contractId) {

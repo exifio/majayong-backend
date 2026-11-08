@@ -6,7 +6,7 @@ import type { AuthenticatedDraftRoute } from "../draft/api.js";
 import { DraftError } from "../draft/rules.js";
 import type { ProjectPorts, ProjectSearchQuery } from "./ports.js";
 import {
-  extendDeadline, getPublicProjectDetail, listMyProjects, listPublicProjects, publishDraft, reviseSpec, softDeleteProject,
+  extendDeadline, getMyProjectDetail, getPublicProjectDetail, listMyProjects, listPublicProjects, publishDraft, reviseSpec, softDeleteProject,
   type PublishDraftInput, type SpecRevisionItem,
 } from "./service.js";
 
@@ -179,6 +179,10 @@ export function mountProjectApi(
 
   router.get("/me/projects", authenticated(roleRoute(Role.CLIENT, async (_req, res, actor) => {
     res.json({ data: await listMyProjects(db, actor.userId) });
+  })));
+
+  router.get("/me/projects/:projectId", authenticated(roleRoute(Role.CLIENT, async (req, res, actor) => {
+    res.json({ data: await getMyProjectDetail(db, pathId(req, "projectId"), actor.userId) });
   })));
 
   router.get("/projects", authenticated(roleRoute(Role.SUPPLIER, async (req, res, _actor) => {

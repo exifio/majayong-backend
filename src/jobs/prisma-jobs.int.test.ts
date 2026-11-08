@@ -126,7 +126,7 @@ describe("INT-C-04: Prisma 기한 대상·배치", { skip: hasDatabase ? false :
         },
       });
       assert.ok((await targets.deliveryIds!(now)).includes(delivery.id));
-      assert.equal((await batch.processAutoApproval(delivery.id, now)).autoApprovedCount, 1);
+      assert.equal((await batch.processAutoApproval(delivery.id, now)).autoApprovedCount, 0);
 
       // 실행: 기한 안내 발송 — 작업 마감 12시간 전 공급자에게 1회
       await batch.sendDueNotifications(contractId, now);

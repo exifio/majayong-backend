@@ -946,6 +946,70 @@ export class SettlementService {
     return { simulated: true, transferNote: SIMULATED_TRANSFER_NOTE, statements };
   }
 
+  /** `GET /me/settlements/summary`: 계약별 문장을 합산한 전체 합계. */
+  async getMySettlementSummary(actor: { userId: string; role: string }): Promise<{
+    simulated: true;
+    transferNote: string;
+    role: "CLIENT" | "SUPPLIER";
+    contractCount: number;
+    totals:
+      | {
+          totalDeposited: number;
+          paidToSupplier: number;
+          remainingDeposit: number;
+          clientFeePaid: number;
+        }
+      | {
+          totalAgreed: number;
+          totalReceived: number;
+          expectedToReceive: number;
+          supplierFeePaid: number;
+          withholdingTaxTotal: number;
+        };
+  }> {
+    const { statements } = await this.getMyPaymentStatements(actor);
+    if (actor.role === "CLIENT") {
+      const totals = { totalDeposited: 0, paidToSupplier: 0, remainingDeposit: 0, clientFeePaid: 0 };
+      for (const statement of statements) {
+        if (!("totalDeposited" in statement)) continue;
+        totals.totalDeposited += statement.totalDeposited;
+        totals.paidToSupplier += statement.paidToSupplier;
+        totals.remainingDeposit += statement.remainingDeposit;
+        totals.clientFeePaid += statement.clientFeePaid;
+      }
+      return {
+        simulated: true,
+        transferNote: SIMULATED_TRANSFER_NOTE,
+        role: "CLIENT",
+        contractCount: statements.length,
+        totals,
+      };
+    }
+
+    const totals = {
+      totalAgreed: 0,
+      totalReceived: 0,
+      expectedToReceive: 0,
+      supplierFeePaid: 0,
+      withholdingTaxTotal: 0,
+    };
+    for (const statement of statements) {
+      if (!("totalAgreed" in statement)) continue;
+      totals.totalAgreed += statement.totalAgreed;
+      totals.totalReceived += statement.totalReceived;
+      totals.expectedToReceive += statement.expectedToReceive;
+      totals.supplierFeePaid += statement.supplierFeePaid;
+      totals.withholdingTaxTotal += statement.withholdingTaxTotal;
+    }
+    return {
+      simulated: true,
+      transferNote: SIMULATED_TRANSFER_NOTE,
+      role: "SUPPLIER",
+      contractCount: statements.length,
+      totals,
+    };
+  }
+
   /**
    * 계좌 인증 완료 후 `APPROVED(HOLD)` 구간의 보류만 해제한다.
    * 호출 트리거(A 이벤트 vs runDueJobs)는 Gate 0에서 정하기 전까지 이 메서드에 고정하지 않는다.

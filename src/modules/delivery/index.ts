@@ -283,6 +283,32 @@ async function applyAutoEscalation(
   return target;
 }
 
+export interface InspectionSummaryItem {
+  contractItemId: string;
+  title: string;
+  stage: "INTERIM" | "FINAL";
+  approved: boolean;
+  autoApproved: boolean;
+  latestDeliveryStatus: string | null;
+  openInspectionCount: number;
+  escalatedCount: number;
+}
+
+export interface InspectionSummary {
+  contractId: string;
+  totalItems: number;
+  approvedItems: number;
+  pendingItems: number;
+  openInspectionItems: number;
+  escalatedItems: number;
+  installments: Array<{
+    installmentId: string;
+    stage: "INTERIM" | "FINAL";
+    status: string;
+    items: InspectionSummaryItem[];
+  }>;
+}
+
 export class DeliveryService {
   private readonly repo: DeliveryRepository;
   private readonly clock: { now(): Date };
@@ -348,6 +374,67 @@ export class DeliveryService {
     if (!contract) throw new DeliveryHttpError(404, "계약을 찾을 수 없습니다.");
     await this.assertParty(actor, contract);
     return delivery;
+  }
+
+  /** `GET /contracts/{id}/inspection-summary`: 계약 단위 검수 진행 요약. */
+  async getInspectionSummary(
+    actor: { userId: string; role: string },
+    contractId: string,
+  ): Promise<InspectionSummary> {
+    const contract = await this.repo.getContract(contractId);
+    if (!contract) throw new DeliveryHttpError(404, "계약을 찾을 수 없습니다.");
+    await this.assertParty(actor, contract);
+
+    const installments = await this.repo.listInstallments(contractId);
+    const summaryInstallments: InspectionSummary["installments"] = [];
+    let totalItems = 0;
+    let approvedItems = 0;
+    let openInspectionItems = 0;
+    let escalatedItems = 0;
+
+    for (const installment of installments) {
+      const items = (await this.repo.listContractItemsByContractId(contractId)).filter(
+        (item) => item.stage === installment.stage,
+      );
+      const deliveries = await this.repo.listDeliveries(installment.id);
+      const latest = deliveries[deliveries.length - 1];
+      const summaryItems: InspectionSummaryItem[] = [];
+      for (const item of items) {
+        const inspections = await this.repo.listInspectionRequestsByItem(item.id);
+        const open = inspections.filter((row) => row.status === "OPEN").length;
+        const escalated = inspections.filter((row) => row.status === "ESCALATED").length;
+        totalItems += 1;
+        if (item.approvedAt !== null) approvedItems += 1;
+        if (open > 0) openInspectionItems += 1;
+        if (escalated > 0) escalatedItems += 1;
+        summaryItems.push({
+          contractItemId: item.id,
+          title: item.title,
+          stage: item.stage,
+          approved: item.approvedAt !== null,
+          autoApproved: item.autoApproved,
+          latestDeliveryStatus: latest?.status ?? null,
+          openInspectionCount: open,
+          escalatedCount: escalated,
+        });
+      }
+      summaryInstallments.push({
+        installmentId: installment.id,
+        stage: installment.stage,
+        status: installment.status,
+        items: summaryItems,
+      });
+    }
+
+    return {
+      contractId,
+      totalItems,
+      approvedItems,
+      pendingItems: totalItems - approvedItems,
+      openInspectionItems,
+      escalatedItems,
+      installments: summaryInstallments,
+    };
   }
 
   async listReworkRequests(
@@ -718,82 +805,15 @@ export class InspectionBatchService {
     });
   }
 
-  async processAutoApproval(deliveryId: string, now: Date): Promise<{ autoApprovedCount: number }> {
-    const delivery = await this.repo.getDelivery(deliveryId);
-    if (!delivery) return { autoApprovedCount: 0 };
-
-    const installment = await this.repo.getInstallment(delivery.installmentId);
-    if (!installment) return { autoApprovedCount: 0 };
-
-    const contract = await this.repo.getContract(installment.contractId);
-    if (!contract) return { autoApprovedCount: 0 };
-
-    if (contract.status === "CANCEL_REQUESTED" || contract.status !== "ACTIVE") {
-      return { autoApprovedCount: 0 };
-    }
-
-    if (now.getTime() <= delivery.inspectionDueAt.getTime()) {
-      return { autoApprovedCount: 0 };
-    }
-
-    // 자동 승인은 그 구간의 가장 최근 납품만 대상으로 한다.
-    const deliveries = await this.repo.listDeliveries(installment.id);
-    const latest = deliveries[deliveries.length - 1];
-    if (!latest || latest.id !== delivery.id) {
-      return { autoApprovedCount: 0 };
-    }
-
-    let count = 0;
-    for (const itemPayload of delivery.items) {
-      const item = await this.repo.getContractItem(itemPayload.contractItemId);
-      if (!item || item.approvedAt !== null) {
-        continue;
-      }
-
-      const inspections = await this.repo.listInspectionRequestsByItem(item.id);
-      const hasBlocker = inspections.some(
-        (i) => i.status === "ESCALATED" || (i.status === "OPEN" && i.deliveryId === delivery.id),
-      );
-      if (hasBlocker) {
-        continue;
-      }
-
-      await this.repo.updateContractItem(item.id, {
-        approvedAt: now,
-        autoApproved: true,
-      });
-      count++;
-    }
-
-    if (count > 0) {
-      await this.notificationPorts.createOnce({
-        userId: contract.clientUserId,
-        type: "AUTO_APPROVED",
-        targetId: delivery.id,
-      });
-      await this.notificationPorts.createOnce({
-        userId: contract.supplierUserId,
-        type: "AUTO_APPROVED",
-        targetId: delivery.id,
-      });
-
-      const itemsInStage = (await this.repo.listContractItemsByContractId(contract.id)).filter(
-        (i) => i.stage === installment.stage,
-      );
-      const allApproved = itemsInStage.every((i) => i.approvedAt !== null);
-      if (allApproved) {
-        await this.repo.updateDelivery(delivery.id, {
-          status: "APPROVED",
-          reviewedAt: now,
-        });
-        await this.settlementPort?.approveInstallment({
-          contractId: contract.id,
-          installmentId: installment.id,
-        });
-      }
-    }
-
-    return { autoApprovedCount: count };
+  /**
+   * D-39: 검수 기한(7일) 경과는 자동 승인·자동 지급이 아니다.
+   *
+   * 기한 안내는 `sendDueNotifications`가 담당하고, 실제 승인·지급은 의뢰인의
+   * 명시적 항목 승인 또는 운영자 판정으로만 진행한다. 기존 배치 인터페이스는
+   * 호출부·job target과의 호환을 위해 유지하되 아무 상태도 바꾸지 않는다.
+   */
+  async processAutoApproval(_deliveryId: string, _now: Date): Promise<{ autoApprovedCount: number }> {
+    return { autoApprovedCount: 0 };
   }
 
   async checkAndEscalateItem(

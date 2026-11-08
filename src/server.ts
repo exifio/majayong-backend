@@ -37,6 +37,7 @@ import {
   createContractRouter,
   type ContractHttpPorts,
 } from './modules/contract/http.js';
+import type { ContractViewPort } from './modules/contract/view.js';
 import {
   createPrismaContractReadPort,
   createPrismaContractUnitOfWork,
@@ -94,6 +95,9 @@ export interface ExternalPorts {
   readonly contractItems: ContractHttpPorts['items'];
   readonly agreementPreview: ContractHttpPorts['preview'];
   readonly depositAttempts: DepositAttemptPort;
+  readonly contractViews?: ContractViewPort;
+  readonly notificationSettings?: import('./modules/notification/settings.js').NotificationSettingsStore;
+  readonly agreementExtractor?: import('./modules/agreement/draft.js').AgreementExtractionPort;
   readonly now: () => Date;
 }
 
@@ -142,7 +146,13 @@ export function createBRouters(
     },
     {
       basePath: '',
-      router: createNotificationRouter({ uow: notificationUow, now: external.now }),
+      router: createNotificationRouter({
+        uow: notificationUow,
+        ...(external.notificationSettings === undefined
+          ? {}
+          : { settings: external.notificationSettings }),
+        now: external.now,
+      }),
     },
     {
       basePath: '',
@@ -152,8 +162,12 @@ export function createBRouters(
           external.depositAttempts,
         ),
         reads: createPrismaContractReadPort(prisma.contract),
+        ...(external.contractViews === undefined ? {} : { views: external.contractViews }),
         applications: applicationRead,
         agreements,
+        ...(external.agreementExtractor === undefined
+          ? {}
+          : { extractor: external.agreementExtractor }),
         items: external.contractItems,
         preview: external.agreementPreview,
         now: external.now,

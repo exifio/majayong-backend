@@ -1,10 +1,11 @@
 openapi: 3.1.0
 info:
-  title: 마자용 B API (지원·채팅·합의·계약·알림·신고·문의)
+  title: 마자용 API (전체 라우트)
   version: 0.7.0
   description: |
-    B 담당 36개 operation. 성공은 {data} 또는 {data,meta}, 오류는
+    실서버 라우트 133개 operation. 성공은 {data} 또는 {data,meta}, 오류는
     {error:{code,message,requestId}}. 모든 경로는 Authorization Bearer가 필요하다.
+    생성된 항목은 `x-response-dto: 부분 응답 - 미검증`이며 DTO는 코드 대조 후 확정한다.
 servers:
   - url: /api/v1
 security:
@@ -19,6 +20,14 @@ tags:
   - name: report
   - name: admin
   - name: support
+  - name: auth
+  - name: delivery
+  - name: draft
+  - name: files
+  - name: health
+  - name: integration
+  - name: profile
+  - name: project
 paths:
   /projects/{projectId}/applications:
     get:
@@ -222,6 +231,25 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
   /applications/{applicationId}/revisions:
+    get:
+      operationId: listApplicationRevisions
+      tags: [application]
+      parameters:
+        - $ref: '#/components/parameters/applicationId'
+      responses:
+        '200':
+          description: 제안 회차 이력(오래된 순)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
     post:
       operationId: reviseApplication
       tags: [application]
@@ -1218,6 +1246,1660 @@ paths:
           $ref: '#/components/responses/Conflict'
         '500':
           $ref: '#/components/responses/InternalError'
+  /me/projects/{projectId}:
+    get:
+      operationId: getMyProjectDetail
+      tags: [project]
+      parameters:
+        - $ref: '#/components/parameters/projectId'
+      responses:
+        '200':
+          description: 의뢰인 본인 프로젝트 상세
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    additionalProperties: true
+  /contracts/{contractId}/inspection-summary:
+    get:
+      operationId: getInspectionSummary
+      tags: [delivery]
+      parameters:
+        - $ref: '#/components/parameters/contractId'
+      responses:
+        '200':
+          description: 계약 단위 검수 요약
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    additionalProperties: true
+  /me/settlements/summary:
+    get:
+      operationId: getMySettlementSummary
+      tags: [settlement]
+      responses:
+        '200':
+          description: 정산 전체 합계(시뮬레이션)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    additionalProperties: true
+  /me/notification-settings:
+    get:
+      operationId: getNotificationSettings
+      tags: [notification]
+      responses:
+        '200':
+          description: 알림 설정
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    additionalProperties: true
+    patch:
+      operationId: updateNotificationSettings
+      tags: [notification]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                contract: { type: boolean }
+                chat: { type: boolean }
+                recruiting: { type: boolean }
+                review: { type: boolean }
+                support: { type: boolean }
+                marketing: { type: boolean }
+      responses:
+        '200':
+          description: 갱신된 알림 설정
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    additionalProperties: true
+  /admin/menu-counts:
+    get:
+      operationId: getAdminMenuCounts
+      tags: [admin]
+      responses:
+        '200':
+          description: 운영자 메뉴 배지 건수
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    additionalProperties: true
+  /admin/contracts/cancellation-history:
+    get:
+      operationId: listCancellationHistory
+      tags: [admin]
+      responses:
+        '200':
+          description: 판정·환불 완료 취소 이력
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+  /admin/blocks:
+    get:
+      operationId: getAdminBlocks
+      tags: [admin]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /admin/blocks/{blockId}/actions:
+    post:
+      operationId: postAdminBlocksBlockIdActions
+      tags: [admin]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /admin/contracts/{contractId}/cancellation/decide:
+    post:
+      operationId: postAdminContractsContractIdCancellationDecide
+      tags: [admin]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /admin/contracts/{contractId}/settlement/mark-processed:
+    post:
+      operationId: postAdminContractsContractIdSettlementMark-processed
+      tags: [admin]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /admin/contracts/cancellation-queue:
+    get:
+      operationId: getAdminContractsCancellation-queue
+      tags: [admin]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /admin/deposits/{depositId}/resolve:
+    post:
+      operationId: postAdminDepositsDepositIdResolve
+      tags: [admin]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /admin/deposits/held:
+    get:
+      operationId: getAdminDepositsHeld
+      tags: [admin]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /admin/event-logs:
+    get:
+      operationId: getAdminEvent-logs
+      tags: [admin]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /admin/inspection-requests/{inspectionRequestId}/decision:
+    post:
+      operationId: postAdminInspection-requestsInspectionRequestIdDecision
+      tags: [admin]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /admin/inspection-requests/escalated:
+    get:
+      operationId: getAdminInspection-requestsEscalated
+      tags: [admin]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /admin/installments/{installmentId}/release:
+    post:
+      operationId: postAdminInstallmentsInstallmentIdRelease
+      tags: [admin]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /admin/jobs/run:
+    post:
+      operationId: postAdminJobsRun
+      tags: [admin]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /auth/google/complete-onboarding:
+    post:
+      operationId: postAuthGoogleComplete-onboarding
+      tags: [auth]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /auth/google/exchange:
+    post:
+      operationId: postAuthGoogleExchange
+      tags: [auth]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /auth/login:
+    post:
+      operationId: postAuthLogin
+      tags: [auth]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /auth/logout:
+    post:
+      operationId: postAuthLogout
+      tags: [auth]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /auth/password-reset/confirm:
+    post:
+      operationId: postAuthPassword-resetConfirm
+      tags: [auth]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /auth/password-reset/request:
+    post:
+      operationId: postAuthPassword-resetRequest
+      tags: [auth]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /auth/refresh:
+    post:
+      operationId: postAuthRefresh
+      tags: [auth]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /auth/register:
+    post:
+      operationId: postAuthRegister
+      tags: [auth]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /contract-items/{contractItemId}/approve:
+    post:
+      operationId: postContract-itemsContractItemIdApprove
+      tags: [contract]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /contract-items/{contractItemId}/rework-requests:
+    get:
+      operationId: getContract-itemsContractItemIdRework-requests
+      tags: [contract]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    post:
+      operationId: postContract-itemsContractItemIdRework-requests
+      tags: [contract]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /contracts/{contractId}/cancellation:
+    get:
+      operationId: getContractsContractIdCancellation
+      tags: [contract]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    post:
+      operationId: postContractsContractIdCancellation
+      tags: [contract]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /contracts/{contractId}/cancellation/agree:
+    post:
+      operationId: postContractsContractIdCancellationAgree
+      tags: [contract]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /contracts/{contractId}/cancellation/object:
+    post:
+      operationId: postContractsContractIdCancellationObject
+      tags: [contract]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /contracts/{contractId}/cancellation/withdraw:
+    post:
+      operationId: postContractsContractIdCancellationWithdraw
+      tags: [contract]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /contracts/{contractId}/deposits:
+    get:
+      operationId: getContractsContractIdDeposits
+      tags: [contract]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    post:
+      operationId: postContractsContractIdDeposits
+      tags: [contract]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /contracts/{contractId}/deposits/{depositId}/confirm:
+    post:
+      operationId: postContractsContractIdDepositsDepositIdConfirm
+      tags: [contract]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /contracts/{contractId}/installments:
+    get:
+      operationId: getContractsContractIdInstallments
+      tags: [contract]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /contracts/{contractId}/reviews:
+    get:
+      operationId: getContractsContractIdReviews
+      tags: [contract]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    post:
+      operationId: postContractsContractIdReviews
+      tags: [contract]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /contracts/{contractId}/statement:
+    get:
+      operationId: getContractsContractIdStatement
+      tags: [contract]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /deliveries/{deliveryId}:
+    get:
+      operationId: getDeliveriesDeliveryId
+      tags: [delivery]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /drafts:
+    get:
+      operationId: getDrafts
+      tags: [draft]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    post:
+      operationId: postDrafts
+      tags: [draft]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /drafts/{draftId}:
+    delete:
+      operationId: deleteDraftsDraftId
+      tags: [draft]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    get:
+      operationId: getDraftsDraftId
+      tags: [draft]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /drafts/{draftId}/apply-estimate:
+    post:
+      operationId: postDraftsDraftIdApply-estimate
+      tags: [draft]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /drafts/{draftId}/blocks:
+    post:
+      operationId: postDraftsDraftIdBlocks
+      tags: [draft]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /drafts/{draftId}/blocks/{blockId}:
+    delete:
+      operationId: deleteDraftsDraftIdBlocksBlockId
+      tags: [draft]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /drafts/{draftId}/blocks/{blockId}/condition-notes:
+    put:
+      operationId: putDraftsDraftIdBlocksBlockIdCondition-notes
+      tags: [draft]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /drafts/{draftId}/budget:
+    patch:
+      operationId: patchDraftsDraftIdBudget
+      tags: [draft]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /drafts/{draftId}/messages:
+    post:
+      operationId: postDraftsDraftIdMessages
+      tags: [draft]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /drafts/{draftId}/price-report:
+    get:
+      operationId: getDraftsDraftIdPrice-report
+      tags: [draft]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /drafts/{draftId}/publish:
+    post:
+      operationId: postDraftsDraftIdPublish
+      tags: [draft]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /drafts/{draftId}/recommendations:
+    get:
+      operationId: getDraftsDraftIdRecommendations
+      tags: [draft]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /drafts/{draftId}/restore:
+    post:
+      operationId: postDraftsDraftIdRestore
+      tags: [draft]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /drafts/{draftId}/retry:
+    post:
+      operationId: postDraftsDraftIdRetry
+      tags: [draft]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /health:
+    get:
+      operationId: getHealth
+      tags: [health]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /inspection-requests/{inspectionRequestId}/escalate:
+    post:
+      operationId: postInspection-requestsInspectionRequestIdEscalate
+      tags: [delivery]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /installments/{installmentId}/deliveries:
+    get:
+      operationId: getInstallmentsInstallmentIdDeliveries
+      tags: [delivery]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    post:
+      operationId: postInstallmentsInstallmentIdDeliveries
+      tags: [delivery]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /installments/{installmentId}/tax-invoice-issued:
+    post:
+      operationId: postInstallmentsInstallmentIdTax-invoice-issued
+      tags: [delivery]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /integrations/toss/payment-events:
+    post:
+      operationId: postIntegrationsTossPayment-events
+      tags: [integration]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /internal/jobs/run:
+    get:
+      operationId: getInternalJobsRun
+      tags: [etc]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /me:
+    delete:
+      operationId: deleteMe
+      tags: [profile]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    get:
+      operationId: getMe
+      tags: [profile]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    patch:
+      operationId: patchMe
+      tags: [profile]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /me/client-profile:
+    get:
+      operationId: getMeClient-profile
+      tags: [profile]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    patch:
+      operationId: patchMeClient-profile
+      tags: [profile]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /me/client-tax-info:
+    patch:
+      operationId: patchMeClient-tax-info
+      tags: [profile]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /me/email/change-confirm:
+    post:
+      operationId: postMeEmailChange-confirm
+      tags: [profile]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /me/email/change-request:
+    post:
+      operationId: postMeEmailChange-request
+      tags: [profile]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /me/google/disconnect:
+    post:
+      operationId: postMeGoogleDisconnect
+      tags: [profile]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /me/password/change:
+    post:
+      operationId: postMePasswordChange
+      tags: [profile]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /me/payment-statements:
+    get:
+      operationId: getMePayment-statements
+      tags: [profile]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /me/payout-account:
+    patch:
+      operationId: patchMePayout-account
+      tags: [profile]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /me/payout-account/verify:
+    post:
+      operationId: postMePayout-accountVerify
+      tags: [profile]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /me/portfolio-summary/hide:
+    post:
+      operationId: postMePortfolio-summaryHide
+      tags: [profile]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /me/portfolio-summary/publish:
+    post:
+      operationId: postMePortfolio-summaryPublish
+      tags: [profile]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /me/portfolio-summary/regenerate:
+    post:
+      operationId: postMePortfolio-summaryRegenerate
+      tags: [profile]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /me/projects:
+    get:
+      operationId: getMeProjects
+      tags: [profile]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /me/supplier-profile:
+    get:
+      operationId: getMeSupplier-profile
+      tags: [profile]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    patch:
+      operationId: patchMeSupplier-profile
+      tags: [profile]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /me/supplier-tax-info:
+    patch:
+      operationId: patchMeSupplier-tax-info
+      tags: [profile]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /profiles/suppliers/{supplierId}:
+    get:
+      operationId: getProfilesSuppliersSupplierId
+      tags: [profile]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /profiles/suppliers/{supplierId}/reviews:
+    get:
+      operationId: getProfilesSuppliersSupplierIdReviews
+      tags: [profile]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /projects:
+    get:
+      operationId: getProjects
+      tags: [project]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /projects/{projectId}:
+    delete:
+      operationId: deleteProjectsProjectId
+      tags: [project]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    get:
+      operationId: getProjectsProjectId
+      tags: [project]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /projects/{projectId}/client-profile:
+    get:
+      operationId: getProjectsProjectIdClient-profile
+      tags: [project]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /projects/{projectId}/client-reviews:
+    get:
+      operationId: getProjectsProjectIdClient-reviews
+      tags: [project]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /projects/{projectId}/extend-deadline:
+    post:
+      operationId: postProjectsProjectIdExtend-deadline
+      tags: [project]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /projects/{projectId}/spec:
+    patch:
+      operationId: patchProjectsProjectIdSpec
+      tags: [project]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /uploads/{fileId}/download:
+    get:
+      operationId: getUploadsFileIdDownload
+      tags: [files]
+      x-response-dto: 부분 응답 - 미검증
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /uploads/presign:
+    post:
+      operationId: postUploadsPresign
+      tags: [files]
+      x-response-dto: 부분 응답 - 미검증
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: 성공(구현 응답 기준, DTO 미검증)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
 components:
   securitySchemes:
     bearerAuth:

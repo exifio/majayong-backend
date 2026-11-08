@@ -204,6 +204,20 @@ export function createPrismaApplicationReadPort(
       return row === null ? null : toApplicationRevision(row);
     },
 
+    async listRevisions(applicationId) {
+      const row = await db.application.findUnique({
+        where: { id: applicationId },
+        include: INCLUDE,
+      });
+      if (row === null) return [];
+      const rows = await db.application.findMany({
+        where: { projectId: row.projectId, supplierId: row.supplierId },
+        include: INCLUDE,
+        orderBy: [{ revisionNo: 'asc' }, { id: 'asc' }],
+      });
+      return rows.map(toApplicationRevision);
+    },
+
     async findProjectClientId(projectId) {
       const project = await db.project.findUnique({
         where: { id: projectId },

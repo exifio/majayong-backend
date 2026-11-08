@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
+import { industryLabel } from "../modules/catalog/industry-label.ts";
 import type {
   DepositContractInfo,
   DepositRepository,
@@ -30,6 +31,7 @@ import type {
   AdminRepository,
   EventLogEntity,
 } from "../modules/admin-ops/index.ts";
+import { AdminHttpError } from "../modules/admin-ops/index.ts";
 
 type Json = unknown;
 
@@ -769,13 +771,15 @@ export function createPrismaRepositories(prisma: PrismaClient, options: PrismaSt
     contractId: string;
     amount: number;
     status: string;
+    events?: readonly { readonly resultNote: string | null }[];
   }): AdminHeldDeposit {
     return {
       id: row.id,
       contractId: row.contractId,
       amount: row.amount,
       status: row.status === "COMPLETED" ? "COMPLETED" : row.status === "FAILED" ? "FAILED" : "HELD",
-      heldReason: "",
+      // D-38: 보류 사유는 별도 컬럼이 아니라 마지막 결제 이벤트의 처리 메모에서 읽는다.
+      heldReason: row.events?.[0]?.resultNote ?? "보류 사유 미기록",
     };
   }
 
@@ -905,6 +909,7 @@ export function createPrismaRepositories(prisma: PrismaClient, options: PrismaSt
       description: row.description,
       functionSummary: row.functionSummary,
       industryCode: row.industryCode,
+      industryLabel: industryLabel(row.industryCode),
       techTags: row.techTags,
       conditions,
       priceBasis: row.priceBasis,
@@ -949,18 +954,29 @@ export function createPrismaRepositories(prisma: PrismaClient, options: PrismaSt
       return mapAdminBlock(row, projects.length);
     },
     async listHeldDeposits() {
-      const rows = await prisma.escrowDeposit.findMany({ where: { status: "HELD" } });
+      const rows = await prisma.escrowDeposit.findMany({
+        where: { status: "HELD" },
+        include: { events: { orderBy: { occurredAt: "desc" }, take: 1 } },
+      });
       return rows.map(mapHeldDeposit);
     },
     async getHeldDeposit(id) {
-      const row = await prisma.escrowDeposit.findUnique({ where: { id } });
+      const row = await prisma.escrowDeposit.findUnique({
+        where: { id },
+        include: { events: { orderBy: { occurredAt: "desc" }, take: 1 } },
+      });
       return row ? mapHeldDeposit(row) : null;
     },
     async updateHeldDeposit(id, patch) {
-      const row = await prisma.escrowDeposit.update({
+      await prisma.escrowDeposit.update({
         where: { id },
         data: { ...(patch.status === undefined ? {} : { status: patch.status as never }) },
       });
+      const row = await prisma.escrowDeposit.findUnique({
+        where: { id },
+        include: { events: { orderBy: { occurredAt: "desc" }, take: 1 } },
+      });
+      if (!row) throw new AdminHttpError(404, "보류 예치를 찾을 수 없습니다.");
       return mapHeldDeposit(row);
     },
     async listEscalatedInspections() {
@@ -1047,6 +1063,19 @@ export function createPrismaRepositories(prisma: PrismaClient, options: PrismaSt
       const rows = (await prisma.contract.findMany({
         where: { status: "CANCEL_REQUESTED" },
         include: contractInclude,
+      })) as Array<ContractRow & { installments: Array<{ status: string }> }>;
+      return rows.map((row) => mapQueue({ ...mapContract(row), installments: row.installments }));
+    },
+    async listCancellationHistory() {
+      const rows = (await prisma.contract.findMany({
+        where: {
+          OR: [
+            { cancelResolvedAt: { not: null } },
+            { refundedAt: { not: null } },
+          ],
+        },
+        include: contractInclude,
+        orderBy: [{ cancelResolvedAt: "desc" }, { id: "desc" }],
       })) as Array<ContractRow & { installments: Array<{ status: string }> }>;
       return rows.map((row) => mapQueue({ ...mapContract(row), installments: row.installments }));
     },

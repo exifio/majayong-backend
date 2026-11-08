@@ -27,6 +27,9 @@ import { createProjectSearchPort } from "./modules/market/project-search.js";
 import { runProjectDeadlineBatch } from "./modules/project/service.js";
 import { breakExpiredContracts } from "./modules/contract/lifecycle.js";
 import { createPrismaContractUnitOfWork } from "./modules/contract/prisma-adapter.js";
+import { createPrismaContractViewPort } from "./modules/contract/view.js";
+import { createPrismaNotificationSettingsStore } from "./modules/notification/settings-adapter.js";
+import { createOpenAiAgreementExtractor } from "./modules/agreement/openai-extractor.js";
 import type { ProjectPorts } from "./modules/project/ports.js";
 import {
   createCancellationMessagePort,
@@ -97,6 +100,10 @@ export function createServerApp(): ServerApp {
       })
     : undefined;
   const integrationDb = createPrismaIntegrationDb(db);
+  const agreementExtractor = createOpenAiAgreementExtractor(
+    process.env.OPENAI_API_KEY,
+    process.env.OPENAI_MODEL,
+  );
   const passwordResetMailer = createPasswordResetMailerFromEnv() ??
     // ponytail: 샌드박스 데모용 no-op mailer. production에서는 env를 켜지 않는다.
     (process.env.PASSWORD_RESET_SANDBOX === "true"
@@ -113,6 +120,9 @@ export function createServerApp(): ServerApp {
   const integrationPorts = createIntegrationPorts(integrationDb, {
     ...publicPorts,
     reportAccounts: createReportAccountActionPort(integrationDb),
+    contractViews: createPrismaContractViewPort(db),
+    notificationSettings: createPrismaNotificationSettingsStore(db),
+    ...(agreementExtractor === undefined ? {} : { agreementExtractor }),
     now,
   });
   const prismaPorts = createPrismaPorts(db);

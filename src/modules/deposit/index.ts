@@ -1180,6 +1180,7 @@ export interface DueJobsContext {
   /** B: 서명 7일·예치 3일 경과 계약 결렬 배치. */
   contractBreaks?(now: Date): Promise<number>;
   batchService?: {
+    /** D-39: 자동 승인은 제거됐다. 호환을 위해 이름만 유지된 no-op이다. */
     processAutoApproval(deliveryId: string, now: Date): Promise<{ autoApprovedCount: number }>;
     sendDueNotifications?(contractId: string, now: Date): Promise<void>;
   };

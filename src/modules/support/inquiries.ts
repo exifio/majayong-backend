@@ -24,6 +24,8 @@ export interface InquiryRecord {
   readonly answeredById: string | null;
   readonly answeredAt: Date | null;
   readonly createdAt: Date;
+  /** 운영자 목록에서만 채워지는 문의자 표시명. */
+  readonly authorName?: string | null;
 }
 
 export interface InquiryTx {

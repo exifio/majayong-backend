@@ -28,6 +28,7 @@ export interface AdminBlock {
   description: string;
   functionSummary: string;
   industryCode: string;
+  industryLabel?: string;
   techTags: readonly string[];
   conditions: readonly AdminBlockCondition[];
   priceBasis: string;
@@ -165,6 +166,7 @@ export interface AdminRepository {
   getInspection(id: string): Promise<AdminEscalatedInspection | null>;
   updateInspection(id: string, patch: Partial<AdminEscalatedInspection>): Promise<AdminEscalatedInspection>;
   listCancellationQueue(): Promise<AdminCancellationContract[]>;
+  listCancellationHistory(): Promise<AdminCancellationContract[]>;
   getCancellationContract(id: string): Promise<AdminCancellationContract | null>;
   updateCancellationContract(
     id: string,
@@ -247,6 +249,11 @@ export function createInMemoryAdminRepository(): AdminRepository {
     async listCancellationQueue() {
       return Array.from(cancellationContracts.values());
     },
+    async listCancellationHistory() {
+      return Array.from(cancellationContracts.values()).filter(
+        (contract) => contract.cancelResolvedAt != null || contract.refundedAt != null,
+      );
+    },
     async getCancellationContract(id) {
       return cancellationContracts.get(id) ?? null;
     },
@@ -268,9 +275,15 @@ export function createInMemoryAdminRepository(): AdminRepository {
   };
 }
 
+export interface AdminMenuCountsPort {
+  reportsPending(): Promise<number>;
+  inquiriesWaiting(): Promise<number>;
+}
+
 export interface AdminOpsServiceOptions {
   repo: AdminRepository;
   catalogPort: CatalogAdminPort;
+  countsPort?: AdminMenuCountsPort;
   depositPort?: {
     resolveHeldDeposit(input: {
       depositId: string;
@@ -330,6 +343,7 @@ export class AdminOpsService {
   private readonly inspectionPort?: AdminOpsServiceOptions["inspectionPort"];
   private readonly cancellationPort?: AdminOpsServiceOptions["cancellationPort"];
   private readonly settlementPort?: AdminOpsServiceOptions["settlementPort"];
+  private readonly countsPort?: AdminOpsServiceOptions["countsPort"];
   private readonly clock: { now(): Date };
   private readonly transactionRunner?: AdminOpsServiceOptions["transactionRunner"];
 
@@ -340,6 +354,7 @@ export class AdminOpsService {
     this.inspectionPort = options.inspectionPort;
     this.cancellationPort = options.cancellationPort;
     this.settlementPort = options.settlementPort;
+    this.countsPort = options.countsPort;
     this.clock = options.clock ?? { now: () => new Date() };
     this.transactionRunner = options.transactionRunner;
   }
@@ -367,6 +382,32 @@ export class AdminOpsService {
   async listBlocks(actor: { userId: string; role: string }): Promise<AdminBlock[]> {
     this.checkAdminRole(actor);
     return this.repo.listBlocks();
+  }
+
+  /** `GET /admin/menu-counts`: 운영자 메뉴 배지용 처리 대기 건수. */
+  async menuCounts(actor: { userId: string; role: string }): Promise<{
+    blocksPending: number;
+    heldDeposits: number;
+    escalatedInspections: number;
+    cancellationQueue: number;
+    reportsPending: number;
+    inquiriesWaiting: number;
+  }> {
+    this.checkAdminRole(actor);
+    const [blocks, deposits, inspections, cancellations] = await Promise.all([
+      this.repo.listBlocks(),
+      this.repo.listHeldDeposits(),
+      this.repo.listEscalatedInspections(),
+      this.repo.listCancellationQueue(),
+    ]);
+    return {
+      blocksPending: blocks.filter((block) => block.reviewedAt === null).length,
+      heldDeposits: deposits.filter((deposit) => deposit.status === "HELD").length,
+      escalatedInspections: inspections.length,
+      cancellationQueue: cancellations.length,
+      reportsPending: (await this.countsPort?.reportsPending()) ?? 0,
+      inquiriesWaiting: (await this.countsPort?.inquiriesWaiting()) ?? 0,
+    };
   }
 
   async executeBlockAction(
@@ -528,6 +569,12 @@ export class AdminOpsService {
   async listCancellationQueue(actor: { userId: string; role: string }): Promise<AdminCancellationContract[]> {
     this.checkAdminRole(actor);
     return this.repo.listCancellationQueue();
+  }
+
+  /** `GET /admin/contracts/cancellation-history`: 판정·환불이 끝난 건의 이력. */
+  async listCancellationHistory(actor: { userId: string; role: string }): Promise<AdminCancellationContract[]> {
+    this.checkAdminRole(actor);
+    return this.repo.listCancellationHistory();
   }
 
   async decideCancellation(

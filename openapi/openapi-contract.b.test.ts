@@ -12,6 +12,7 @@ const EXPECTED: readonly (readonly [string, string])[] = [
   ['post', '/applications/{applicationId}/withdraw'],
   ['post', '/applications/{applicationId}/reject'],
   ['post', '/applications/{applicationId}/revisions'],
+  ['get', '/applications/{applicationId}/revisions'],
   ['get', '/me/bookmarks'],
   ['put', '/projects/{projectId}/bookmark'],
   ['delete', '/projects/{projectId}/bookmark'],
@@ -41,6 +42,13 @@ const EXPECTED: readonly (readonly [string, string])[] = [
   ['get', '/support/inquiries/{inquiryId}'],
   ['get', '/admin/support/inquiries'],
   ['post', '/admin/support/inquiries/{inquiryId}/answer'],
+  ['get', '/me/projects/{projectId}'],
+  ['get', '/contracts/{contractId}/inspection-summary'],
+  ['get', '/me/settlements/summary'],
+  ['get', '/me/notification-settings'],
+  ['patch', '/me/notification-settings'],
+  ['get', '/admin/menu-counts'],
+  ['get', '/admin/contracts/cancellation-history'],
 ];
 
 function operations(): Map<string, Set<string>> {
@@ -65,11 +73,11 @@ function operations(): Map<string, Set<string>> {
 describe('Gate 0 OpenAPI 3.1 계약', () => {
   const declared = operations();
 
-  it('B 담당 36개 operation이 모두 선언되어 있다', () => {
+  it('실제 라우트 operation이 모두 선언되어 있다', () => {
     // 준비
     const total = [...declared.values()].reduce((sum, methods) => sum + methods.size, 0);
     // 확인
-    assert.equal(total, 36);
+    assert.equal(total, 133);
     for (const [method, path] of EXPECTED) {
       const methods = declared.get(path);
       assert.ok(methods !== undefined, `missing path ${path}`);

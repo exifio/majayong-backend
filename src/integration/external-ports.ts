@@ -416,6 +416,9 @@ export interface IntegrationPortOptions {
   readonly recommendations?: ExternalPorts['recommendations'];
   readonly reportAccounts?: ReportAccountActionPort;
   readonly agreementPreview?: ExternalPorts['agreementPreview'];
+  readonly contractViews?: ExternalPorts['contractViews'];
+  readonly notificationSettings?: ExternalPorts['notificationSettings'];
+  readonly agreementExtractor?: ExternalPorts['agreementExtractor'];
   readonly now: () => Date;
 }
 
@@ -437,6 +440,9 @@ export function createIntegrationPorts(
     contractItems: createContractItemSourcePort(db),
     agreementPreview: options.agreementPreview ?? createAgreementPreviewPort(db),
     depositAttempts: createDepositAttemptPort(db),
+    ...(options.contractViews === undefined ? {} : { contractViews: options.contractViews }),
+    ...(options.notificationSettings === undefined ? {} : { notificationSettings: options.notificationSettings }),
+    ...(options.agreementExtractor === undefined ? {} : { agreementExtractor: options.agreementExtractor }),
     now: options.now,
   };
 }

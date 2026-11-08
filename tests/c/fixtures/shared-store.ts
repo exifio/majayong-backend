@@ -656,6 +656,11 @@ export function createSharedStore(seed: SharedContractSeed) {
     async listCancellationQueue() {
       return Array.from(cancellationQueue.values());
     },
+    async listCancellationHistory() {
+      return Array.from(cancellationQueue.values()).filter(
+        (contract) => contract.cancelResolvedAt != null || contract.refundedAt != null,
+      );
+    },
     async getCancellationContract(id) {
       return cancellationQueue.get(id) ?? null;
     },

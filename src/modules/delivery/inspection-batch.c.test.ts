@@ -108,7 +108,7 @@ describe("C-04: 자동 승인·이견 3택·기한 배치", () => {
     };
   }
 
-  it("C-04-T01 7일 직전/정각/직후 시각 경계", async () => {
+  it("C-04-T01 검수 기한 전·정각·경과 모두 자동 승인하지 않는다", async () => {
     // 준비: 검수 기한이 7일 뒤인 납품
     const { repo, installment, item1, batchService } = createTestSetup();
 
@@ -123,28 +123,17 @@ describe("C-04: 자동 승인·이견 3택·기한 배치", () => {
       reviewedAt: null,
     });
 
-    // 실행 및 확인: 1. 7일 직전 (1초 전) -> 자동 승인 0건
-    const justBefore = new Date(sevenDaysLater.getTime() - 1000);
-    const resBefore = await batchService.processAutoApproval(delivery.id, justBefore);
-    assert.equal(resBefore.autoApprovedCount, 0);
-
-    const itemBefore = await repo.getContractItem(item1.id);
-    assert.equal(itemBefore?.approvedAt, null);
-
-    // 실행 및 확인: 2. 기한 정각까지는 유효 -> 자동 승인 0건
-    const resExact = await batchService.processAutoApproval(delivery.id, sevenDaysLater);
-    assert.equal(resExact.autoApprovedCount, 0);
-
-    // 실행 및 확인: 3. 기한을 넘긴 직후 -> 자동 승인 1건, 다시 실행하면 0건
-    const justAfter = new Date(sevenDaysLater.getTime() + 1);
-    const resAfter = await batchService.processAutoApproval(delivery.id, justAfter);
-    assert.equal(resAfter.autoApprovedCount, 1);
-    const itemExact = await repo.getContractItem(item1.id);
-    assert.ok(itemExact?.approvedAt);
-    assert.equal(itemExact.autoApproved, true);
-
-    const resAgain = await batchService.processAutoApproval(delivery.id, new Date(sevenDaysLater.getTime() + 1000));
-    assert.equal(resAgain.autoApprovedCount, 0);
+    // 실행 및 확인: 기한 전·정각·경과 모두 자동 승인·지급하지 않는다(D-39).
+    for (const at of [
+      new Date(sevenDaysLater.getTime() - 1000),
+      sevenDaysLater,
+      new Date(sevenDaysLater.getTime() + 1),
+    ]) {
+      assert.equal((await batchService.processAutoApproval(delivery.id, at)).autoApprovedCount, 0);
+    }
+    const itemAfter = await repo.getContractItem(item1.id);
+    assert.equal(itemAfter?.approvedAt, null);
+    assert.equal(itemAfter?.autoApproved, false);
   });
 
   it("C-04-T02 OPEN·ESCALATED·CANCEL_REQUESTED에서 승인·지급 0", async () => {
@@ -179,11 +168,13 @@ describe("C-04: 자동 승인·이견 3택·기한 배치", () => {
 
     // 실행: 7일 경과 시점 배치 실행
     const res = await batchService.processAutoApproval(delivery.id, new Date(sevenDaysLater.getTime() + 1));
-    // 확인: item1은 OPEN 보완이 걸려 있어 제외되고 item2만 자동 승인
-    assert.equal(res.autoApprovedCount, 1); // item2만 자동 승인
+    // 확인: D-39에 따라 보완 여부와 무관하게 자동 승인 0
+    assert.equal(res.autoApprovedCount, 0);
 
     const checkItem1 = await repo.getContractItem(item1.id);
-    assert.equal(checkItem1?.approvedAt, null); // item1은 승인되지 않음
+    assert.equal(checkItem1?.approvedAt, null);
+    const checkItem2 = await repo.getContractItem(item2.id);
+    assert.equal(checkItem2?.approvedAt, null);
 
     // 준비: 계약을 CANCEL_REQUESTED로 변경
     repo.seedContract({ ...contract, status: "CANCEL_REQUESTED" });
@@ -192,7 +183,7 @@ describe("C-04: 자동 승인·이견 3택·기한 배치", () => {
     assert.equal(resCancel.autoApprovedCount, 0);
   });
 
-  it("C-04-T03 부분 승인 유지", async () => {
+  it("C-04-T03 직접 승인 속성은 유지하고 자동 승인은 하지 않는다", async () => {
     // 준비: item1은 이미 의뢰인이 직접 승인한 상태
     const { repo, installment, item1, item2, batchService } = createTestSetup();
     await repo.updateContractItem(item1.id, {
@@ -216,15 +207,16 @@ describe("C-04: 자동 승인·이견 3택·기한 배치", () => {
 
     // 실행: 7일 경과 배치 실행
     const res = await batchService.processAutoApproval(delivery.id, new Date(sevenDaysLater.getTime() + 1));
-    // 확인: item2만 새로 자동 승인되고 item1의 직접 승인 속성은 유지됨
-    assert.equal(res.autoApprovedCount, 1); // item2만 새로 자동 승인됨
+    // 확인: 자동 승인은 하지 않고, 기존 직접 승인 속성만 유지된다(D-39).
+    assert.equal(res.autoApprovedCount, 0);
 
     const item1After = await repo.getContractItem(item1.id);
     assert.equal(item1After?.autoApproved, false); // 기존 직접 승인 속성 유지
     assert.equal(item1After?.approvedAt?.getTime(), baseTime.getTime());
 
     const item2After = await repo.getContractItem(item2.id);
-    assert.equal(item2After?.autoApproved, true);
+    assert.equal(item2After?.approvedAt, null);
+    assert.equal(item2After?.autoApproved, false);
   });
 
   it("C-04-T04 보완 3회 자동 개입", async () => {
@@ -464,7 +456,7 @@ describe("C-04: 자동 승인·이견 3택·기한 배치", () => {
     return { contractItemId, links: [`https://app/${contractItemId}`], files: [], howToCheck: "확인" };
   }
 
-  it("C-04-F01 가장 최근 납품만 자동 승인 판단 기준이 됨", async () => {
+  it("C-04-F01 납품 회차·보완·이견과 무관하게 자동 승인하지 않는다", async () => {
     // 준비: 1회차 납품과 이전 회차 OPEN 보완 요청
     const { repo, installment, item1, item2, batchService } = createTestSetup();
 
@@ -504,15 +496,17 @@ describe("C-04: 자동 승인·이견 3택·기한 배치", () => {
       reviewedAt: null,
     });
 
-    // 실행 및 확인: 최신이 아닌 납품으로는 자동 승인하지 않는다.
+    // 실행 및 확인: 이전 회차·최신 회차 모두 자동 승인하지 않는다(D-39).
     assert.equal(
       (await batchService.processAutoApproval(d1.id, new Date(sevenDaysLater.getTime() + 1000))).autoApprovedCount,
       0,
     );
-
-    // 실행 및 확인: 최신 납품은 이전 회차 OPEN 때문에 막히지 않는다.
-    const res = await batchService.processAutoApproval(d2.id, new Date(d2Due.getTime() + 1));
-    assert.equal(res.autoApprovedCount, 2);
+    assert.equal(
+      (
+        await batchService.processAutoApproval(d2.id, new Date(d2Due.getTime() + 1))
+      ).autoApprovedCount,
+      0,
+    );
 
     // 준비: 운영자 판정 대기(ESCALATED) 이견이 걸린 납품
     const escalated = createTestSetup();
@@ -536,7 +530,7 @@ describe("C-04: 자동 승인·이견 3택·기한 배치", () => {
       escalatedAt: baseTime,
       createdAt: baseTime,
     });
-    // 실행 및 확인: ESCALATED 이견이 있으면 자동 승인 0
+    // 실행 및 확인: ESCALATED 이견이 있어도 자동 승인하지 않는다(D-39).
     assert.equal(
       (
         await escalated.batchService.processAutoApproval(d3.id, new Date(sevenDaysLater.getTime() + 1))

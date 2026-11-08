@@ -26,6 +26,7 @@ export interface InquiryRow {
   readonly answeredById: string | null;
   readonly answeredAt: Date | null;
   readonly createdAt: Date;
+  readonly user?: { readonly name: string | null };
 }
 
 export interface InquiryDbClient {
@@ -36,6 +37,7 @@ export interface InquiryDbClient {
     findMany(input: {
       readonly where: Readonly<Record<string, unknown>>;
       readonly orderBy?: readonly Readonly<Record<string, 'asc' | 'desc'>>[];
+      readonly include?: { readonly user: { readonly select: { readonly name: true } } };
     }): Promise<readonly InquiryRow[]>;
     create(input: { readonly data: Readonly<Record<string, unknown>> }): Promise<InquiryRow>;
     update(input: {
@@ -113,6 +115,7 @@ export function toInquiryRecord(row: InquiryRow): InquiryRecord {
     answeredById: row.answeredById,
     answeredAt: row.answeredAt,
     createdAt: row.createdAt,
+    ...(row.user === undefined ? {} : { authorName: row.user.name }),
   };
 }
 
@@ -179,6 +182,9 @@ export function createInquiryTx(db: InquiryDbClient, now: () => Date): InquiryTx
       const rows = await db.supportInquiry.findMany({
         where,
         orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+        ...(input.userId === undefined
+          ? { include: { user: { select: { name: true } } } }
+          : {}),
       });
       return rows.map(toInquiryRecord);
     },

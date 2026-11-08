@@ -386,7 +386,7 @@ describe("INT-G2-04: 알림·이벤트·검수 경계", { skip: hasDatabase ? fa
     }
   });
 
-  it("검수 기한이 지나면 미승인 항목을 자동 승인하고 AUTO_APPROVED를 보낸다", async () => {
+  it("검수 기한이 지나도 자동 승인하지 않고 AUTO_APPROVED를 보내지 않는다", async () => {
     // 준비
     const prisma = new PrismaClient();
     const ids = await seed(prisma, {
@@ -400,21 +400,22 @@ describe("INT-G2-04: 알림·이벤트·검수 경계", { skip: hasDatabase ? fa
       // 실행
       const result = await inspections.processAutoApproval(ids.deliveryId as string, NOW);
       // 확인
-      assert.equal(result.autoApprovedCount, 1);
+      assert.equal(result.autoApprovedCount, 0);
 
-      assert.ok(
-        (await prisma.contractItem.findUniqueOrThrow({ where: { id: ids.contractItemId as string } })).approvedAt !== null,
+      assert.equal(
+        (await prisma.contractItem.findUniqueOrThrow({ where: { id: ids.contractItemId as string } })).approvedAt,
+        null,
       );
       assert.equal(
         (await prisma.paymentInstallment.findUniqueOrThrow({ where: { id: ids.installmentId as string } })).status,
-        "APPROVED",
+        "DELIVERED",
       );
       for (const userId of [ids.clientId, ids.supplierId]) {
         assert.equal(
           await prisma.notification.count({
             where: { userId, type: "AUTO_APPROVED", targetId: ids.deliveryId as string },
           }),
-          1,
+          0,
         );
       }
     } finally {

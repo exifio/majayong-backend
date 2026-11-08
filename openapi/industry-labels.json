@@ -1,8 +1,13 @@
 {
-  "version": 1,
+  "version": 2,
   "description": "업종 코드 → 화면 표시 라벨. 코드는 API의 industryCode 값이며 변경하지 않는다. 라벨은 표시 전용이며 새 업종 추가는 additive다.",
   "labels": {
-    "RESTAURANT_RESERVATION": "예약기반음식점"
+    "FOOD": "음식점",
+    "RESTAURANT_RESERVATION": "예약기반음식점",
+    "CAFE": "카페",
+    "BEAUTY": "뷰티",
+    "RETAIL": "소매",
+    "SERVICE": "서비스"
   },
   "fallbackLabel": "기타"
 }

@@ -1,7 +1,7 @@
 import { BlockOrigin, DraftStatus, EventType, Prisma, PrismaClient, ProjectStatus, SpecItemStatus } from "@prisma/client";
 import { DraftError } from "../draft/rules.js";
 import {
-  canDeleteProject, canEditSpec, canExtendDeadline, isWithinExtensionCap, publicProjectDetail, publicProjectSummary, resolveClosingOutcome,
+  canDeleteProject, canEditSpec, canExtendDeadline, hopeBudgetBand, isWithinExtensionCap, publicProjectDetail, publicProjectSummary, resolveClosingOutcome,
   type PublicProjectDetail, type PublicProjectSummary,
 } from "./policy.js";
 import type { ProjectPorts, ProjectSearchPort, ProjectSearchQuery } from "./ports.js";
@@ -224,6 +224,33 @@ export type MyProjectView = {
   detailViewCount: number;
 };
 
+export type MyProjectDetailItem = {
+  specItemId: string;
+  title: string;
+  description: string;
+  conditions: unknown;
+  wireframe: unknown;
+};
+
+export type MyProjectDetail = {
+  projectId: string;
+  title: string;
+  summary: string;
+  industryCode: string;
+  requiredSkills: string[];
+  status: ProjectStatus;
+  displayState: string;
+  hopeBudget: number | null;
+  hopeBudgetBand: string | null;
+  recruitStartAt: string | null;
+  deadline: string | null;
+  selectionEndsAt: string | null;
+  currentVersion: number;
+  applicationCount: number;
+  detailViewCount: number;
+  items: MyProjectDetailItem[];
+};
+
 export type PublicProjectListPage = { items: PublicProjectSummary[]; total: number };
 export type SpecRevisionResult = { projectId: string; currentVersion: number; itemCount: number };
 export type DeadlineExtensionResult = { projectId: string; deadline: string; status: ProjectStatus };
@@ -290,6 +317,57 @@ export async function listMyProjects(db: PrismaClient, clientId: string): Promis
     applicationCount: project._count.applications,
     detailViewCount: viewByProject.get(project.id) ?? 0,
   }));
+}
+
+/** 의뢰인 본인 프로젝트 상세. 발행 후에도 현재 버전 INCLUDED 명세를 그대로 보여준다. */
+export async function getMyProjectDetail(
+  db: PrismaClient,
+  projectId: string,
+  clientId: string,
+): Promise<MyProjectDetail> {
+  const project = await db.project.findFirst({
+    where: { id: projectId, deletedAt: null, draft: { clientId } },
+    select: {
+      id: true, title: true, summary: true, industryCode: true, requiredSkills: true,
+      status: true, hopeBudget: true, recruitStartAt: true, deadline: true, selectionEndsAt: true,
+      currentVersion: true, _count: { select: { applications: true } },
+    },
+  });
+  if (!project) throw new DraftError("PROJECT_NOT_FOUND", 404);
+
+  const [items, detailViewCount] = await Promise.all([
+    db.specItem.findMany({
+      where: { projectId, versionNo: project.currentVersion, status: SpecItemStatus.INCLUDED },
+      orderBy: { sortOrder: "asc" },
+      select: { id: true, title: true, description: true, conditions: true, wireframe: true },
+    }),
+    db.eventLog.count({ where: { projectId, type: EventType.SPEC_DETAIL_VIEWED } }),
+  ]);
+
+  return {
+    projectId: project.id,
+    title: project.title,
+    summary: project.summary,
+    industryCode: project.industryCode,
+    requiredSkills: project.requiredSkills,
+    status: project.status,
+    displayState: projectDisplayState(project.status, project._count.applications),
+    hopeBudget: project.hopeBudget,
+    hopeBudgetBand: hopeBudgetBand(project.hopeBudget),
+    recruitStartAt: project.recruitStartAt?.toISOString() ?? null,
+    deadline: project.deadline?.toISOString() ?? null,
+    selectionEndsAt: project.selectionEndsAt?.toISOString() ?? null,
+    currentVersion: project.currentVersion,
+    applicationCount: project._count.applications,
+    detailViewCount,
+    items: items.map(item => ({
+      specItemId: item.id,
+      title: item.title,
+      description: item.description,
+      conditions: item.conditions,
+      wireframe: item.wireframe,
+    })),
+  };
 }
 
 export async function listPublicProjects(

@@ -603,7 +603,7 @@ describe("C-03: 항목별 납품·승인·보완 요청", () => {
     assert.ok(inspections.every((row) => row.status === "RESOLVED" && row.resolvedAt instanceof Date));
   });
 
-  it("C-03-F03b 검수 기한이 지나면 자동 승인됨", async () => {
+  it("C-03-F03b 검수 기한이 지나도 자동 승인되지 않는다", async () => {
     // 준비: 재납품까지 마친 문맥.
     const setup = createTestSetup();
     const { service, repo, contract, installment, item1, setNow } = setup;
@@ -625,7 +625,7 @@ describe("C-03: 항목별 납품·승인·보완 요청", () => {
       items: [payload(item1.id)],
     });
 
-    // 실행: 검수 기한이 지난 뒤 자동 승인 배치를 돌린다.
+    // 실행: 검수 기한이 지난 뒤 배치를 돌린다.
     const sent: string[] = [];
     const notificationPorts: NotificationPorts = {
       async createOnce(input) {
@@ -636,9 +636,10 @@ describe("C-03: 항목별 납품·승인·보완 요청", () => {
     const batch = new InspectionBatchService({ repo, notificationPorts });
     const result = await batch.processAutoApproval(d2.id, new Date("2026-11-19T15:00:00.000Z"));
 
-    // 확인: 자동 승인 1건.
-    assert.equal(result.autoApprovedCount, 1);
-    assert.ok((await repo.getContractItem(item1.id))?.approvedAt);
+    // 확인: 자동 승인하지 않고, 알림도 보내지 않는다(D-39).
+    assert.equal(result.autoApprovedCount, 0);
+    assert.equal((await repo.getContractItem(item1.id))?.approvedAt, null);
+    assert.deepEqual(sent, []);
   });
 
   it("C-03-F04 보완 사유·조건·대상 항목 검증", async () => {

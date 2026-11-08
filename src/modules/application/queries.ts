@@ -25,6 +25,7 @@ export interface ApplicationReadPort {
     readonly role: 'CLIENT' | 'SUPPLIER';
   }): Promise<readonly ApplicationRecord[]>;
   findRevision(applicationId: string): Promise<ApplicationRevision | null>;
+  listRevisions?(applicationId: string): Promise<readonly ApplicationRevision[]>;
 }
 
 function isMine(application: ApplicationRecord, actor: Actor): boolean {
@@ -64,6 +65,22 @@ export async function getApplicationDetail(
     supplierUserId: revision.supplierId,
   });
   return revision;
+}
+
+/** `GET /applications/{id}/revisions`: 같은 공급자의 제안 회차를 오래된 순으로. */
+export async function listApplicationRevisions(
+  port: ApplicationReadPort,
+  input: { readonly actor: Actor; readonly applicationId: string },
+): Promise<readonly ApplicationRevision[]> {
+  if (port.listRevisions === undefined) throw new ApplicationAccessError();
+  const current = await port.findRevision(input.applicationId);
+  if (current === null) throw new ApplicationAccessError();
+  requireApplicationParty(input.actor, {
+    clientUserId: current.clientUserId,
+    supplierUserId: current.supplierId,
+  });
+  const rows = await port.listRevisions(input.applicationId);
+  return [...rows].sort((a, b) => a.revisionNo - b.revisionNo || a.id.localeCompare(b.id));
 }
 
 export interface ProjectApplicationsPort {
