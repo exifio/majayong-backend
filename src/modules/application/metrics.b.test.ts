@@ -196,7 +196,9 @@ describe('B-08-T02 조회 권한·금액·견적 이력', () => {
     assert.equal(cards.length, 1);
     assert.deepEqual(cards[0], {
       applicationId: 'app-1-r2', supplierId: 'supplier-1', revisionNo: 2,
-      totalAmount: 3_100_000, durationDays: 42, questionCount: 2,
+      totalAmount: 3_100_000, clientFee: 155_000, depositAmount: 3_255_000,
+      firstRevisionAmount: 2_800_000,
+      durationDays: 42, questionCount: 2,
       revisionCount: 2, submittedAt: new Date('2026-11-02T00:00:00.000Z'),
     });
     for (const key of ['unitPrice', 'aiUnitPrice', 'isLowest', 'recommended', 'rank']) {
@@ -616,8 +618,11 @@ describe('B-08 보조: 프로젝트 지원 비교 목록 (#050)', () => {
     assert.deepEqual(Object.keys(card ?? {}).sort(), [
       'applicationId',
       'careerYears',
+      'clientFee',
       'completedContractCount',
+      'depositAmount',
       'durationDays',
+      'firstRevisionAmount',
       'portfolioSummary',
       'questionCount',
       'ratingAvg',
@@ -626,6 +631,7 @@ describe('B-08 보조: 프로젝트 지원 비교 목록 (#050)', () => {
       'revisionNo',
       'submittedAt',
       'supplierId',
+      'supplierName',
       'totalAmount',
     ]);
   });
@@ -639,6 +645,7 @@ describe('B-08 보조: 프로젝트 지원 비교 목록 (#050)', () => {
         calls.push([...supplierIds]);
         return [{
           supplierId: 'supplier-1',
+          displayName: '스튜디오 넛',
           careerYears: 8,
           ratingAvg: 4.8,
           reviewCount: 12,

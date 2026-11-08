@@ -10,6 +10,7 @@
 import { maskContacts } from '../chat/masking.js';
 import { notifyRecipientsInTransaction, type NotificationTx } from '../notification/notifications.js';
 import type { ProjectStatus } from '../market/public-project.js';
+import { calculateClientDeposit } from '../settlement/policy.js';
 import { ApplicationError, type ApplicationRecord, type ApplicationStatus } from './dto.js';
 
 export interface ApplicationQuestion {
@@ -157,6 +158,12 @@ export interface ApplicationCard {
   readonly supplierId: string;
   readonly revisionNo: number;
   readonly totalAmount: number;
+  /** 의뢰인 수수료 5%(내림). */
+  readonly clientFee: number;
+  /** 견적 총액 + 의뢰인 수수료. */
+  readonly depositAmount: number;
+  /** 같은 공급자의 첫 회차 견적 총액. */
+  readonly firstRevisionAmount: number;
   readonly durationDays: number;
   readonly questionCount: number;
   readonly revisionCount: number;
@@ -165,6 +172,7 @@ export interface ApplicationCard {
 
 export interface SupplierProfileSummary {
   readonly supplierId: string;
+  readonly displayName: string | null;
   readonly careerYears: number | null;
   readonly ratingAvg: number | null;
   readonly reviewCount: number;
@@ -172,7 +180,10 @@ export interface SupplierProfileSummary {
   readonly portfolioSummary: string | null;
 }
 
-export type SupplierApplicationCard = ApplicationCard & SupplierProfileSummary;
+export type SupplierApplicationCard = ApplicationCard &
+  Omit<SupplierProfileSummary, 'displayName'> & {
+    readonly supplierName: string | null;
+  };
 
 export const ACTIVE_STATUSES: readonly ApplicationStatus[] = [
   'SUBMITTED',
@@ -683,12 +694,18 @@ export function compareApplicationCards(
   revisions: readonly ApplicationRevision[],
 ): readonly ApplicationCard[] {
   const latestBySupplier = new Map<string, ApplicationRevision>();
+  const firstBySupplier = new Map<string, ApplicationRevision>();
   const revisionCountBySupplier = new Map<string, number>();
 
   for (const revision of revisions) {
     const count = revisionCountBySupplier.get(revision.supplierId) ?? 0;
     if (revision.revisionNo > count) {
       revisionCountBySupplier.set(revision.supplierId, revision.revisionNo);
+    }
+
+    const first = firstBySupplier.get(revision.supplierId);
+    if (first === undefined || revision.revisionNo < first.revisionNo) {
+      firstBySupplier.set(revision.supplierId, revision);
     }
 
     const current = latestBySupplier.get(revision.supplierId);
@@ -703,16 +720,23 @@ export function compareApplicationCards(
         a.submittedAt.getTime() - b.submittedAt.getTime() ||
         a.supplierId.localeCompare(b.supplierId),
     )
-    .map((revision) => ({
-      applicationId: revision.id,
-      supplierId: revision.supplierId,
-      revisionNo: revision.revisionNo,
-      totalAmount: revision.totalAmount,
-      durationDays: revision.durationDays,
-      questionCount: revision.questions.length,
-      revisionCount: revisionCountBySupplier.get(revision.supplierId) ?? revision.revisionNo,
-      submittedAt: revision.submittedAt,
-    }));
+    .map((revision) => {
+      const deposit = calculateClientDeposit(revision.totalAmount);
+      return {
+        applicationId: revision.id,
+        supplierId: revision.supplierId,
+        revisionNo: revision.revisionNo,
+        totalAmount: revision.totalAmount,
+        clientFee: deposit.clientFee,
+        depositAmount: deposit.depositAmount,
+        firstRevisionAmount:
+          firstBySupplier.get(revision.supplierId)?.totalAmount ?? revision.totalAmount,
+        durationDays: revision.durationDays,
+        questionCount: revision.questions.length,
+        revisionCount: revisionCountBySupplier.get(revision.supplierId) ?? revision.revisionNo,
+        submittedAt: revision.submittedAt,
+      };
+    });
 }
 
 /** A의 공개 프로필 projection만 결합한다. 제공되지 않은 프로필은 비어 있는 값으로 둔다. */
@@ -725,6 +749,7 @@ export function attachSupplierProfileSummaries(
     const profile = bySupplier.get(card.supplierId);
     return {
       ...card,
+      supplierName: profile === undefined ? null : profile.displayName,
       careerYears: profile === undefined ? null : profile.careerYears,
       ratingAvg: profile === undefined ? null : profile.ratingAvg,
       reviewCount: profile === undefined ? 0 : profile.reviewCount,

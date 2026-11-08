@@ -13,7 +13,7 @@ describe('Prisma 런타임 연결', () => {
     const supplierProfile = {
       findMany: async (input: unknown) => {
         calls.push(input);
-        return [{ userId: 'supplier-1' }];
+        return [{ userId: 'supplier-1', displayName: '스튜디오' }];
       },
     };
     const delegate = new Proxy({}, {
@@ -27,6 +27,7 @@ describe('Prisma 런타임 연결', () => {
       where: { userId: { in: ['supplier-1'] } },
       select: {
         userId: true,
+        displayName: true,
         careerYears: true,
         ratingAvg: true,
         reviewCount: true,
@@ -42,7 +43,7 @@ describe('Prisma 런타임 연결', () => {
     } as const;
 
     // 실행 및 확인
-    assert.deepEqual(await ports.applicationRead.supplierProfile?.findMany(input), [{ userId: 'supplier-1' }]);
+    assert.deepEqual(await ports.applicationRead.supplierProfile?.findMany(input), [{ userId: 'supplier-1', displayName: '스튜디오' }]);
     assert.deepEqual(calls, [input]);
   });
 

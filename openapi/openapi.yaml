@@ -3156,12 +3156,16 @@ components:
                   isAvailable: { type: boolean }
     SupplierApplicationCardDto:
       type: object
-      required: [applicationId, supplierId, revisionNo, totalAmount, durationDays, questionCount, revisionCount, submittedAt, careerYears, ratingAvg, reviewCount, completedContractCount, portfolioSummary]
+      required: [applicationId, supplierId, supplierName, revisionNo, totalAmount, clientFee, depositAmount, firstRevisionAmount, durationDays, questionCount, revisionCount, submittedAt, careerYears, ratingAvg, reviewCount, completedContractCount, portfolioSummary]
       properties:
         applicationId: { type: string }
         supplierId: { type: string }
+        supplierName: { type: [string, 'null'] }
         revisionNo: { type: integer }
         totalAmount: { type: integer }
+        clientFee: { type: integer }
+        depositAmount: { type: integer }
+        firstRevisionAmount: { type: integer }
         durationDays: { type: integer }
         questionCount: { type: integer }
         revisionCount: { type: integer }

@@ -71,6 +71,7 @@ export interface ApplicationReadDbClient {
       readonly where: { readonly userId: { readonly in: readonly string[] } };
       readonly select: {
         readonly userId: true;
+        readonly displayName: true;
         readonly careerYears: true;
         readonly ratingAvg: true;
         readonly reviewCount: true;
@@ -85,6 +86,7 @@ export interface ApplicationReadDbClient {
       };
     }): Promise<readonly {
       readonly userId: string;
+      readonly displayName: string;
       readonly careerYears: number | null;
       readonly ratingAvg: number | null;
       readonly reviewCount: number;
@@ -160,6 +162,7 @@ export function createPrismaApplicationReadPort(
       if (supplierIds.length === 0) return [];
       if (db.supplierProfile === undefined) return supplierIds.map((supplierId) => ({
         supplierId,
+        displayName: null,
         careerYears: null,
         ratingAvg: null,
         reviewCount: 0,
@@ -170,6 +173,7 @@ export function createPrismaApplicationReadPort(
         where: { userId: { in: [...supplierIds] } },
         select: {
           userId: true,
+          displayName: true,
           careerYears: true,
           ratingAvg: true,
           reviewCount: true,
@@ -185,6 +189,7 @@ export function createPrismaApplicationReadPort(
       });
       return rows.filter((row) => row.user.withdrawnAt === null).map((row): SupplierProfileSummary => ({
         supplierId: row.userId,
+        displayName: row.displayName,
         careerYears: row.careerYears,
         ratingAvg: row.ratingAvg,
         reviewCount: row.reviewCount,

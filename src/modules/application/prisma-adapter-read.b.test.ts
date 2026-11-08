@@ -122,17 +122,17 @@ describe('B-02 Prisma 읽기 어댑터', () => {
           calls.push(input);
           return [
             {
-              userId: 'supplier-1', careerYears: 8, ratingAvg: 4.8, reviewCount: 3,
+              userId: 'supplier-1', displayName: '스튜디오 넛', careerYears: 8, ratingAvg: 4.8, reviewCount: 3,
               portfolioSummary: '메일 a@b.com', portfolioSummaryStatus: 'PUBLISHED',
               portfolioConsentAt: FIXED_NOW, user: { withdrawnAt: null }, applications: [{ id: 'completed-1' }],
             },
             {
-              userId: 'supplier-2', careerYears: 2, ratingAvg: null, reviewCount: 0,
+              userId: 'supplier-2', displayName: '두번째', careerYears: 2, ratingAvg: null, reviewCount: 0,
               portfolioSummary: '비공개 요약', portfolioSummaryStatus: 'HIDDEN',
               portfolioConsentAt: FIXED_NOW, user: { withdrawnAt: null }, applications: [],
             },
             {
-              userId: 'supplier-3', careerYears: 2, ratingAvg: null, reviewCount: 0,
+              userId: 'supplier-3', displayName: '철회자', careerYears: 2, ratingAvg: null, reviewCount: 0,
               portfolioSummary: '철회 사용자', portfolioSummaryStatus: 'PUBLISHED',
               portfolioConsentAt: FIXED_NOW, user: { withdrawnAt: FIXED_NOW }, applications: [],
             },
@@ -147,10 +147,10 @@ describe('B-02 Prisma 읽기 어댑터', () => {
     // 확인
     assert.equal(calls.length, 1);
     assert.deepEqual(summaries, [{
-      supplierId: 'supplier-1', careerYears: 8, ratingAvg: 4.8, reviewCount: 3,
+      supplierId: 'supplier-1', displayName: '스튜디오 넛', careerYears: 8, ratingAvg: 4.8, reviewCount: 3,
       completedContractCount: 1, portfolioSummary: '메일 [연락처 비공개]',
     }, {
-      supplierId: 'supplier-2', careerYears: 2, ratingAvg: null, reviewCount: 0,
+      supplierId: 'supplier-2', displayName: '두번째', careerYears: 2, ratingAvg: null, reviewCount: 0,
       completedContractCount: 0, portfolioSummary: null,
     }]);
   });

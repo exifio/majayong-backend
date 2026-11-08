@@ -772,18 +772,18 @@ describe('B-02 보조: 지원 비교 카드', () => {
     ]);
     const enriched = attachSupplierProfileSummaries(cards, [
       {
-        supplierId: 'supplier-1', careerYears: 6, ratingAvg: 4.5,
+        supplierId: 'supplier-1', displayName: '스튜디오 넛', careerYears: 6, ratingAvg: 4.5,
         reviewCount: 2, completedContractCount: 3, portfolioSummary: '예약 서비스 구축 경험',
       },
     ]);
 
     // 확인
     assert.deepEqual(enriched[0], {
-      ...cards[0], careerYears: 6, ratingAvg: 4.5, reviewCount: 2,
+      ...cards[0], supplierName: '스튜디오 넛', careerYears: 6, ratingAvg: 4.5, reviewCount: 2,
       completedContractCount: 3, portfolioSummary: '예약 서비스 구축 경험',
     });
     assert.deepEqual(enriched[1], {
-      ...cards[1], careerYears: null, ratingAvg: null, reviewCount: 0,
+      ...cards[1], supplierName: null, careerYears: null, ratingAvg: null, reviewCount: 0,
       completedContractCount: 0, portfolioSummary: null,
     });
     // 준비
