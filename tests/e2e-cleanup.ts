@@ -93,10 +93,27 @@ export async function cleanupE2e(db: PrismaClient, ids: E2ECleanupIds): Promise<
   await db.paymentEvent.deleteMany({ where: { depositId: { in: depositIds } } });
   await db.paymentInstallment.deleteMany({ where: { contractId: { in: contractIds } } });
   await db.escrowDeposit.deleteMany({ where: { contractId: { in: contractIds } } });
-  if (users.length > 0) {
-    await db.supportInquiry.deleteMany({
-      where: { OR: [{ userId: { in: users } }, { answeredById: { in: users } }] },
+  const inquiries = users.length > 0
+    ? await db.supportInquiry.findMany({
+        where: { OR: [{ userId: { in: users } }, { answeredById: { in: users } }] },
+        select: { id: true },
+      })
+    : [];
+  const inquiryIds = inquiries.map((row) => row.id);
+  if (users.length > 0 || contractIds.length > 0 || inquiryIds.length > 0) {
+    // Storage 객체는 이 helper 범위 밖이다. objectKey는 호출자가 별도로 정리한다.
+    await db.fileAttachment.deleteMany({
+      where: {
+        OR: [
+          { uploaderId: { in: users } },
+          { contractId: { in: contractIds } },
+          { inquiryId: { in: inquiryIds } },
+        ],
+      },
     });
+  }
+  if (users.length > 0) {
+    await db.supportInquiry.deleteMany({ where: { id: { in: inquiryIds } } });
   }
   await db.contractItem.deleteMany({ where: { contractId: { in: contractIds } } });
   await db.contract.deleteMany({ where: { id: { in: contractIds } } });
@@ -107,6 +124,7 @@ export async function cleanupE2e(db: PrismaClient, ids: E2ECleanupIds): Promise<
   await db.bookmark.deleteMany({ where: { projectId: { in: [...projects] } } });
   await db.project.deleteMany({ where: { id: { in: [...projects] } } });
   await db.draftBlock.deleteMany({ where: { draftId: { in: [...drafts] } } });
+  await db.clientUtterance.deleteMany({ where: { draftId: { in: [...drafts] } } });
   await db.draft.deleteMany({ where: { id: { in: [...drafts] } } });
   if (users.length > 0) {
     await db.notification.deleteMany({ where: { userId: { in: users } } });
