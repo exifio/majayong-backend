@@ -116,6 +116,7 @@ FE Vercel:
 
 - Vercel Function `maxDuration` 60초, `memory` 1024MB. 장시간 배치/대용량 작업은 별도 worker 필요.
 - 이 런북의 `JOB_SCHEDULER_ENABLED=false`에서는 예치 orderId 재조회와 서명·예치 기한 배치가 실행되지 않는다. orderId 복구는 `TOSS_SECRET_KEY`가 Toss API 개별 `test_sk`/`live_sk` 키이고 장기 실행 worker의 scheduler가 켜져야 동작한다.
-- Toss 실제 결제·webhook 완료는 비활성. 예치 요청은 PENDING까지만.
+- Toss 웹훅 수신은 구현·서명 검증 완료(staging 200/401/멱등 PASS). 운영 등록 주소는 저장소에 기록이 없으므로 [staging 런북의 웹훅 등록 절](staging.md#toss-웹훅-등록)을 따라 **백엔드 도메인**에 등록하고 주소를 기록한다. 프론트 도메인 경유는 서명이 깨져 401이다.
+- production 결제는 `TOSS_SECRET_KEY`가 유효한 `test_sk_`/`live_sk_`가 아니면 `VITE_ENABLE_DEPOSIT=false`를 유지한다(2026-11-07 키 401 `UNAUTHORIZED_KEY`로 차단). 예치 요청만으로는 PENDING이다.
 - 실제 송금·정산·환불, PDF 렌더링은 범위 밖이다. 비밀번호 재설정 메일은 adapter(D-27)가 있으나 `RESEND_API_KEY`·`MAIL_FROM`·`APP_BASE_URL`이 없으면 503이다.
 - Supabase DB 연결 문자열과 Vercel 프로젝트 연결은 별도 승인·자격이 필요하다.

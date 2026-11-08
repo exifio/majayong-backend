@@ -485,6 +485,17 @@ describe("INT-G2-03: C HTTP 예치 확정 원자성", { skip: hasDatabase ? fals
         (confirmed.body as { data?: { deposit?: { status?: string } } }).data?.deposit?.status,
         "COMPLETED",
       );
+
+      // 확인: 승인 응답에 공급자 정산 계좌 원문이 없고, 화면이 쓰는 상대·프로젝트 식별자는 있다
+      const confirmedText = JSON.stringify(confirmed.body);
+      for (const field of ["payoutAccountNo", "payoutBank", "payoutHolder", "accountNumber"]) {
+        assert.equal(confirmedText.includes(field), false, `${field}가 응답에 노출됐다`);
+      }
+      const confirmedContract = (confirmed.body as {
+        data?: { contract?: { projectId?: string; supplierUserId?: string } };
+      }).data?.contract;
+      assert.equal(confirmedContract?.projectId, ids.projectId);
+      assert.equal(confirmedContract?.supplierUserId, ids.supplierAId);
       const deposit = await prisma.escrowDeposit.findUniqueOrThrow({ where: { id: depositId } });
       assert.equal(deposit.status, "COMPLETED");
       assert.equal(deposit.pgKey, "pk-confirm-http");

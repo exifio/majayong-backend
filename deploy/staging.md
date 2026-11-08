@@ -77,9 +77,17 @@ FE는 `apps/web/api/v1/[...path].js` Vercel Function 프록시를 사용한다.
 
 포함: 인증/프로필, 프로젝트·지원, 채팅·알림, 합의·계약, 양측 서명, 예치 **상태 조회/요청(PENDING)**.
 
-제외/비활성: 실제 Toss 결제 완료·자동 거절(웹훅), 실제 송금·환불, PDF 렌더링, 이메일 발송(비밀번호 재설정/이메일 변경), 파일 저장소(미설정 시 503).
+제외/비활성: 실제 송금·환불, PDF 렌더링, 이메일 발송(비밀번호 재설정/이메일 변경), 파일 저장소(미설정 시 503), 상시 scheduler/worker.
 
-`POST /contracts/{id}/deposits`의 201은 **PENDING 요청**이며 완료가 아니다. `paymentStatus`/`totalDeposited`가 바뀌고 자동 거절이 일어나는 시점은 검증된 webhook 완료 후다.
+`POST /contracts/{id}/deposits`의 201은 **PENDING 요청**이며 완료가 아니다. `paymentStatus`/`totalDeposited`가 바뀌고 자동 거절이 일어나는 시점은 검증된 webhook 또는 사용자 confirm의 PG 재조회 완료 후다.
+
+### Toss 웹훅 등록
+
+- 등록 주소는 **백엔드 도메인**이다: `https://<backend-domain>/api/v1/integrations/toss/payment-events`. 이벤트는 `PAYMENT_STATUS_CHANGED`.
+- 프론트 도메인(`majayong.vercel.app/api/v1/...`)으로 등록하면 실패한다. `apps/web/api/proxy.js`가 `authorization`·`content-type`·`accept`만 넘기고 본문을 `JSON.stringify`로 다시 만들어 서명 헤더가 사라지고 raw body가 바뀐다 → 백엔드가 401.
+- 백엔드는 `tosspayments-webhook-signature`·`tosspayments-webhook-transmission-time` 헤더로 원본 본문 HMAC을 검증한다. 키는 `TOSS_WEBHOOK_SECRET`이며 바꾸면 재배포가 필요하다.
+- 검증 기록(2026-11-07, staging): 정상 서명 200 `COMPLETED`, 위조 서명 401, 재전송 200 멱등. **등록된 실제 URL은 저장소에 기록이 없다** — 등록/변경 시 이 절에 주소와 일자를 남긴다.
+- 누락 웹훅 복구: Vercel Cron 15분 `/api/v1/internal/jobs/run` 또는 ADMIN 수동 `POST /admin/jobs/run`. staging은 상시 worker가 없어 수동 실행으로만 검증했다.
 
 ## 7. 배포 후 확인
 
@@ -94,7 +102,7 @@ FE는 `apps/web/api/v1/[...path].js` Vercel Function 프록시를 사용한다.
 
 ## 8. 차단 요소·남은 작업
 
-- Toss sandbox 자격·webhook 서명/헤더 검증 전 실제 결제 완료 금지.
+- Toss sandbox 서명 웹훅은 검증됐다(2026-11-07). 남은 차단은 상시 scheduler/worker 부재와 **Toss 대시보드의 실제 등록 주소 미기록**이다. 운영 결제는 유효한 키 확인 전 켜지 않는다.
 - 이메일 발송 어댑터 미연결(`DELIVERY_UNAVAILABLE`).
 - OpenAI 미설정 시 AI 생성 대신 DEFAULT_DRAFT/seed만 사용.
 - Supabase 미설정 시 파일 API 503.
