@@ -53,8 +53,8 @@ interface RouteContext {
 interface Route {
   method: string;
   parts: string[];
-  auth: "user" | "webhook" | "cron";
-  handle(ctx: RouteContext, services: AppServices): Promise<{ status?: number; body: unknown }>;
+  auth: "user" | "webhook" | "cron" | "public";
+  handle(ctx: RouteContext, services: AppServices): Promise<{ status?: number; body: unknown; redirectTo?: string }>;
 }
 
 const route = (
@@ -221,6 +221,11 @@ const ROUTES: Route[] = [
   })),
   route("GET", "/uploads/:fileId/download", "user", async ({ actor, params }, s) => ({
     body: await s.files.createPresignedDownload(actor, params.fileId),
+  })),
+  route("GET", "/uploads/:fileId/avatar", "public", async ({ params }, s) => ({
+    status: 302,
+    redirectTo: await s.files.createProfileImageRedirect(params.fileId),
+    body: null,
   })),
   route("GET", "/admin/blocks", "user", async ({ actor }, s) => ({
     body: await s.admin.listBlocks(actor),
@@ -482,6 +487,16 @@ export function createHttpHandler(options: AppOptions) {
         options.services,
       );
       const status = result.status ?? 200;
+      if (result.redirectTo !== undefined) {
+        // 프로필 이미지처럼 <img>가 직접 부르는 공개 경로만 리다이렉트를 허용한다.
+        res.writeHead(status, {
+          location: result.redirectTo,
+          "cache-control": "public, max-age=60",
+          "x-request-id": requestId,
+        });
+        res.end();
+        return;
+      }
       const responseBody = isWebhook ? (result.body ?? null) : { data: result.body ?? null };
       writeJson(res, status, responseBody, requestId);
     } catch (err) {

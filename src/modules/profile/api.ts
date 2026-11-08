@@ -49,7 +49,14 @@ function nullableUrl(value: unknown, field: string): string | null | undefined {
   if (typeof result === "string") {
     let parsed: URL;
     try { parsed = new URL(result); } catch { throw new ProfileError("INVALID_REQUEST", 400); }
-    if (parsed.protocol !== "https:" || parsed.username || parsed.password) throw new ProfileError("INVALID_REQUEST", 400);
+    if (parsed.protocol !== "https:" || parsed.username || parsed.password) {
+      // 로컬 개발(Vite)에서만 http://localhost 프로필 이미지를 허용한다.
+      const isLocalDev =
+        parsed.protocol === "http:" &&
+        (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1") &&
+        parsed.username === "" && parsed.password === "";
+      if (!isLocalDev) throw new ProfileError("INVALID_REQUEST", 400);
+    }
   }
   return result;
 }

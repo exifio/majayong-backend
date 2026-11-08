@@ -456,4 +456,35 @@ describe("C-08: 파일 presign·권한 관리", () => {
     const ownInquiryFile = await service.createPresignedDownload(inquiryUser, inquiryFileIds[0]);
     assert.ok(ownInquiryFile.downloadUrl);
   });
+
+  it("C-08-D38 프로필 이미지만 인증 없는 경로에서 signed URL로 리다이렉트한다", async () => {
+    // 준비
+    const { service } = createTestSetup();
+    const profile = await service.createPresignedUpload(
+      { userId: "client-c08", role: "CLIENT" },
+      {
+        purpose: "PROFILE_IMAGE",
+        fileName: "me.png",
+        fileSize: 1024,
+        mimeType: "image/png",
+      },
+    );
+    const inquiry = await service.createPresignedUpload(
+      { userId: "client-c08", role: "CLIENT" },
+      {
+        purpose: "SUPPORT_INQUIRY",
+        fileName: "inquiry.png",
+        fileSize: 1024,
+        mimeType: "image/png",
+      },
+    );
+
+    // 실행 및 확인
+    const url = await service.createProfileImageRedirect(profile.fileId);
+    assert.match(url, /mock_download_token/);
+    await assert.rejects(
+      () => service.createProfileImageRedirect(inquiry.fileId),
+      (err: unknown) => err instanceof FileHttpError && err.status === 404,
+    );
+  });
 });

@@ -295,4 +295,18 @@ export class FileService {
     const expiresInSec = 180;
     return this.storageAdapter.createDownloadUrl(this.bucket, file.objectKey, expiresInSec);
   }
+
+  /**
+   * D-39 후속: 프로필 이미지는 비공개 버킷을 유지하되, 인증 없는 고정 경로에서
+   * 짧은 signed URL로 리다이렉트한다. 다른 purpose 파일은 존재 여부도 숨긴다.
+   */
+  async createProfileImageRedirect(fileId: string): Promise<string> {
+    const file = await this.repo.getFileMetadata(fileId);
+    if (!file || file.purpose !== "PROFILE_IMAGE") {
+      throw new FileHttpError(404, "프로필 이미지를 찾을 수 없습니다.");
+    }
+    const expiresInSec = 180;
+    const signed = await this.storageAdapter.createDownloadUrl(this.bucket, file.objectKey, expiresInSec);
+    return signed.downloadUrl;
+  }
 }
